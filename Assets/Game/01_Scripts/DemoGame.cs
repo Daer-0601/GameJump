@@ -31,6 +31,10 @@ namespace Gamejam2026
         public float darknessPenalty = 0.3f;
         public float errorPenalty = 10f;
         public float successRelief = 9f;
+        public float unstablePenalty = 2f;
+        public float stabilizeRelief = 6f;
+        public float destabilizeMin = 35f;
+        public float destabilizeMax = 45f;
         public bool Playing => started && !paused && !finished;
         public bool PlayerInputEnabled => Playing && Time.frameCount > inputResumeFrame;
         public float Danger { get; private set; }
@@ -49,6 +53,7 @@ namespace Gamejam2026
         float nextDisturbance;
         float disturbanceUntil;
         float nextDangerAlarm;
+        float nextDestabilize = -1f;
         float[] lightLevels;
         AudioSource sfxSource;
 
@@ -129,7 +134,7 @@ namespace Gamejam2026
             sfxSource.playOnAwake = false;
             sfxSource.spatialBlend = 0f;
             sfxSource.volume = 1f;
-            for (int i = 0; i < players.Length && i < candles.Length; i++) candles[i].PickUp(players[i]);
+            EquipCrew();
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             if (ambience) ambience.Play();
@@ -181,13 +186,14 @@ namespace Gamejam2026
             if (!Playing) return;
 
             elapsed += Time.deltaTime;
-            float rate = dangerPerSecond;
+            DestabilizeDue();
+            float rate = dangerPerSecond + CountUnstable() * unstablePenalty;
             foreach (var player in players)
             {
                 bool lit = false;
                 foreach (var candle in candles)
                 {
-                    if (!candle || !candle.candleLight || !candle.candleLight.enabled) continue;
+                    if (!candle || !candle.gameObject.activeInHierarchy || !candle.candleLight || !candle.candleLight.enabled) continue;
                     if (Vector3.Distance(player.transform.position + Vector3.up, candle.candleLight.transform.position) < 5f) lit = true;
                 }
                 if (!lit) rate += darknessPenalty;
@@ -227,11 +233,105 @@ namespace Gamejam2026
             }
             mechanism.done = true;
             completed++;
+            if (nextDestabilize < 0f) ScheduleDestabilize();
             PlaySfx(gearsClip);
             PlaySfx(lightClip);
             Danger = Mathf.Max(0f, Danger - successRelief);
-            foreach (var teammate in players) teammate.Tell(mechanism.symbol + " completado. " + completed + "/3");
-            if (completed == order.Length) Finish(true);
+            string note = mechanism.symbol + " completado. " + completed + "/3";
+            if (completed == order.Length && AnyUnstable()) note = "Secuencia lista. Falta estabilizar un mecanismo.";
+            foreach (var teammate in players) teammate.Tell(note);
+            TryWin();
+        }
+
+        public void OnStabilized(DemoMechanism mechanism, DemoPlayer player)
+        {
+            if (!Playing || mechanism == null || player == null) return;
+            PlaySfx(gearsClip);
+            Danger = Mathf.Max(0f, Danger - stabilizeRelief);
+            foreach (var teammate in players) teammate.Tell(mechanism.symbol + " estabilizado.");
+            TryWin();
+        }
+
+        void TryWin()
+        {
+            if (completed == order.Length && !AnyUnstable()) Finish(true);
+        }
+
+        void ScheduleDestabilize()
+        {
+            float wait = UnityEngine.Random.Range(Mathf.Min(destabilizeMin, destabilizeMax), Mathf.Max(destabilizeMin, destabilizeMax));
+            nextDestabilize = elapsed + wait;
+        }
+
+        void DestabilizeDue()
+        {
+            if (nextDestabilize < 0f || elapsed < nextDestabilize || mechanisms == null) return;
+            DemoMechanism pick = null;
+            int available = 0;
+            foreach (var mechanism in mechanisms)
+            {
+                if (!mechanism || !mechanism.done || mechanism.unstable) continue;
+                available++;
+                if (UnityEngine.Random.Range(0, available) == 0) pick = mechanism;
+            }
+            if (pick != null)
+            {
+                pick.unstable = true;
+                disturbanceUntil = elapsed + 1.6f;
+                PlaySfx(dangerClip);
+                foreach (var teammate in players)
+                    if (teammate) teammate.Tell(pick.symbol + " se desajusto. Estabilizalo sin la manivela.");
+            }
+            ScheduleDestabilize();
+        }
+
+        bool AnyUnstable()
+        {
+            return CountUnstable() > 0;
+        }
+
+        int CountUnstable()
+        {
+            if (mechanisms == null) return 0;
+            int count = 0;
+            foreach (var mechanism in mechanisms)
+                if (mechanism && mechanism.unstable) count++;
+            return count;
+        }
+
+        void EquipCrew()
+        {
+            CarryObject crank = null;
+            foreach (var item in FindObjectsByType<CarryObject>(FindObjectsInactive.Exclude))
+            {
+                if (item != null && !item.isCandle)
+                {
+                    crank = item;
+                    break;
+                }
+            }
+
+            if (players != null && players.Length > 0 && candles != null && candles.Length > 0 && candles[0] != null)
+                candles[0].PickUp(players[0]);
+
+            if (candles != null)
+            {
+                for (int i = 1; i < candles.Length; i++)
+                {
+                    if (candles[i] == null) continue;
+                    if (candles[i].candleLight) candles[i].candleLight.enabled = false;
+                    candles[i].gameObject.SetActive(false);
+                }
+            }
+
+            if (crank != null && players != null && players.Length > 1 && players[1] != null && players[1].Held == null)
+                crank.PickUp(players[1]);
+        }
+
+        string FormatTime(float seconds)
+        {
+            int total = Mathf.Max(0, Mathf.FloorToInt(seconds));
+            return (total / 60).ToString("00") + ":" + (total % 60).ToString("00");
         }
 
         void Finish(bool success)
@@ -239,7 +339,7 @@ namespace Gamejam2026
             if (finished) return;
             finished = true;
             won = success;
-            PlaySfx(jumpScareClip);
+            if (!success) PlaySfx(jumpScareClip);
             Time.timeScale = 0f;
             LockPointer();
         }
@@ -803,7 +903,7 @@ namespace Gamejam2026
         {
             DrawTracked(titleRect, "A Oscuras", glyphStyle, 7f, Paper);
             Rule(titleRect.center.x, titleRect.yMax + 2f, 168f);
-            Label(briefRect, "Encuentren la inscripción y activen los tres mecanismos en el orden indicado. Para llevar la manivela hay que dejar la vela.", bodyStyle, Ash);
+            Label(briefRect, "Uno ilumina con la vela y el otro lleva la manivela. Activen los tres mecanismos en el orden de la inscripción. Si uno se desajusta, estabilícenlo manteniendo la tecla de usar.", bodyStyle, Ash);
 
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
@@ -890,7 +990,9 @@ namespace Gamejam2026
                 Label(new Rect(left + 28f, 22f, 28f, 26f), (i + 1).ToString(), hudStyle, Ash);
                 string held = players[i].Held ? players[i].Held.displayName : "manos libres";
                 Label(new Rect(left + 56f, 22f, half - 84f, 26f), PlayerLabel(i) + "   /   " + held, hudStyle, Paper);
+                int loose = CountUnstable();
                 string danger = completed + "/3 mecanismos    peligro " + Mathf.CeilToInt(Danger) + "%";
+                if (loose > 0) danger += "    " + loose + (loose == 1 ? " desajustado" : " desajustados");
                 if (Danger >= dangerAlarmThreshold) danger += "    alto";
                 Label(new Rect(left + 56f, 52f, half - 84f, 24f), danger, hudSmallStyle, Ash);
                 Box(new Rect(left + 20f, height - 18f, half - 40f, 4f), new Color(0.16f, 0.15f, 0.13f, 0.9f));
@@ -924,8 +1026,9 @@ namespace Gamejam2026
         string ResultBody()
         {
             string who = PlayerLabel(0) + " y " + PlayerLabel(1);
-            if (won) return who + " se coordinaron y cerraron el incidente.";
-            return "El peligro llegó al límite y alcanzó a " + who + ". Pueden repartir la luz y la manivela de otra forma.";
+            string clock = " Tiempo " + FormatTime(elapsed) + ".";
+            if (won) return who + " se coordinaron y cerraron el incidente." + clock;
+            return "El peligro llegó al límite y alcanzó a " + who + "." + clock + " Pueden repartir la luz y la manivela de otra forma.";
         }
 
         string HelpText()

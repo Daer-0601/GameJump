@@ -37,12 +37,13 @@ public static class DemoCheck
         if (EditorApplication.timeSinceStartup < readyAt) return;
         try
         {
-            var game = UnityEngine.Object.FindFirstObjectByType<DemoGame>();
+            var game = UnityEngine.Object.FindAnyObjectByType<DemoGame>();
             Require(game != null, "partida presente");
             var player = game.players[0];
             Require(game.players.Length == 2 && game.mechanisms.Length == 3, "dos jugadores y tres mecanismos");
             Require(game.players[0].view.rect.width == 0.5f && game.players[1].view.rect.x == 0.5f, "pantalla dividida");
-            Require(game.players.All(p => p.Held && p.Held.isCandle), "cada jugador empieza con vela");
+            Require(game.players[0].Held && game.players[0].Held.isCandle, "jugador 1 empieza con la vela");
+            Require(game.players[1].Held && !game.players[1].Held.isCandle, "jugador 2 empieza con la manivela");
             game.Begin();
             Require(game.Playing, "iniciar sin requerir mandos");
             if (phase == 1)
@@ -52,12 +53,14 @@ public static class DemoCheck
                 var candle = player.Held;
                 candle.Drop();
                 Require(player.Held == null && candle.owner == null && candle.candleLight.enabled, "soltar conserva la luz");
-                var crank = UnityEngine.Object.FindObjectsByType<CarryObject>(FindObjectsSortMode.None).First(o => !o.isCandle);
+                var crank = game.players[1].Held;
+                Require(crank != null && !crank.isCandle, "la manivela esta en juego");
+                crank.PickUp(player);
+                Require(crank.owner == game.players[1], "no robar un objeto ocupado");
+                crank.Drop();
                 crank.PickUp(player);
                 candle.PickUp(player);
                 Require(player.Held == crank && candle.owner == null, "un objeto por jugador");
-                crank.PickUp(game.players[1]);
-                Require(crank.owner == player, "no robar un objeto ocupado");
                 var sequence = game.SequenceText.Replace("ORDEN: ", "").Split(" > ");
                 var first = game.mechanisms.First(m => m.symbol == sequence[0]);
                 var wrong = game.mechanisms.First(m => m.symbol != sequence[0]);
@@ -79,7 +82,9 @@ public static class DemoCheck
 
             Require(game.progress == 0 && game.Danger < 2f, "reinicio limpio");
             player.Held.Drop();
-            var tool = UnityEngine.Object.FindObjectsByType<CarryObject>(FindObjectsSortMode.None).First(o => !o.isCandle);
+            var tool = game.players[1].Held;
+            Require(tool != null && !tool.isCandle, "la manivela sigue en la partida");
+            tool.Drop();
             tool.PickUp(player);
             string next = game.SequenceText.Replace("ORDEN: ", "").Split(" > ")[0];
             var incorrect = game.mechanisms.First(m => m.symbol != next);

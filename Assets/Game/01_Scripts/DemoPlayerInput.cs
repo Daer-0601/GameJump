@@ -6,8 +6,8 @@ namespace Gamejam2026
     // Centraliza los controles; no mueve objetos ni modifica el estado de la partida.
     public static class DemoPlayerInput
     {
-        public const string Help = "J1: WASD, E usar, Shift izq. correr, Q soltar; F/H y T/G mirar (o mouse).\n"
-            + "J2: flechas, A usar, Shift der. correr, O soltar; J/L e I/K mirar. Esc pausa.";
+        public const string Help = "J1: WASD, E usar, mantener E estabiliza, Shift izq. correr, Q soltar; F/H y T/G mirar (o mouse).\n"
+            + "J2: flechas, A usar, mantener A estabiliza, Shift der. correr, O soltar; J/L e I/K mirar. Esc pausa.";
 
         public readonly struct State
         {
@@ -15,14 +15,16 @@ namespace Gamejam2026
             public readonly Vector2 Look;
             public readonly bool Run;
             public readonly bool Use;
+            public readonly bool UseHeld;
             public readonly bool Drop;
 
-            public State(Vector2 move, Vector2 look, bool run, bool use, bool drop)
+            public State(Vector2 move, Vector2 look, bool run, bool use, bool useHeld, bool drop)
             {
                 Move = Vector2.ClampMagnitude(move, 1f);
                 Look = look;
                 Run = run;
                 Use = use;
+                UseHeld = useHeld;
                 Drop = drop;
             }
         }
@@ -39,6 +41,7 @@ namespace Gamejam2026
             Vector2 look;
             bool run;
             bool use;
+            bool useHeld;
             bool drop;
             if (playerIndex == 0)
             {
@@ -49,6 +52,7 @@ namespace Gamejam2026
                 if (Mouse.current != null) look += Mouse.current.delta.ReadValue() * mouseSensitivity;
                 run = keyboard.leftShiftKey.isPressed;
                 use = keyboard.eKey.wasPressedThisFrame;
+                useHeld = keyboard.eKey.isPressed;
                 drop = keyboard.qKey.wasPressedThisFrame;
             }
             else
@@ -59,9 +63,10 @@ namespace Gamejam2026
                     Axis(keyboard.kKey.isPressed, keyboard.iKey.isPressed)) * keyboardLookSpeed * deltaTime;
                 run = keyboard.rightShiftKey.isPressed;
                 use = keyboard.aKey.wasPressedThisFrame;
+                useHeld = keyboard.aKey.isPressed;
                 drop = keyboard.oKey.wasPressedThisFrame;
             }
-            return new State(move, look, run, use, drop);
+            return new State(move, look, run, use, useHeld, drop);
         }
 
         static float Axis(bool negative, bool positive) => (positive ? 1f : 0f) - (negative ? 1f : 0f);

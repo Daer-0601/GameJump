@@ -324,7 +324,7 @@ public static class DemoBuilder
     public static void CapturePreview()
     {
         EditorSceneManager.OpenScene(ScenePath);
-        var game = UnityEngine.Object.FindFirstObjectByType<DemoGame>();
+        var game = UnityEngine.Object.FindAnyObjectByType<DemoGame>();
         var image = new Texture2D(1600, 900, TextureFormat.RGB24, false);
         for (int i = 0; i < 2; i++)
         {
