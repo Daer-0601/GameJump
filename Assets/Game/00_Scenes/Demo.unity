@@ -119,6 +119,68 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &5036009
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5036010}
+  m_Layer: 0
+  m_Name: Soporte manivela
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5036010
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5036009}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 1.2, z: -0.52}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 393935326}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &22155947
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 22155948}
+  m_Layer: 0
+  m_Name: Soporte manivela
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &22155948
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 22155947}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 1.2, z: -0.52}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1718761329}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &85241812
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -823,7 +885,10 @@ MonoBehaviour:
   game: {fileID: 779294658}
   indicator: {fileID: 1682008185}
   wheel: {fileID: 691934330}
+  crankSocket: {fileID: 5036010}
+  mountedCrank: {fileID: 0}
   done: 0
+  unstable: 0
 --- !u!4 &393935326
 Transform:
   m_ObjectHideFlags: 0
@@ -841,6 +906,7 @@ Transform:
   - {fileID: 1292119609}
   - {fileID: 691934330}
   - {fileID: 1682008184}
+  - {fileID: 5036010}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &434530442
@@ -2182,8 +2248,9 @@ MonoBehaviour:
   hand: {fileID: 983896459}
   game: {fileID: 779294658}
   moveSpeed: 3.2
+  runMultiplier: 1.75
   mouseSensitivity: 0.11
-  stickSensitivity: 115
+  keyboardLookSpeed: 115
   reach: 2.6
 --- !u!4 &765641623
 Transform:
@@ -2282,6 +2349,10 @@ MonoBehaviour:
   darknessPenalty: 0.3
   errorPenalty: 10
   successRelief: 9
+  unstablePenalty: 2
+  stabilizeRelief: 6
+  destabilizeMin: 35
+  destabilizeMax: 45
 --- !u!4 &779294659
 Transform:
   m_ObjectHideFlags: 0
@@ -5202,7 +5273,10 @@ MonoBehaviour:
   game: {fileID: 779294658}
   indicator: {fileID: 1179894779}
   wheel: {fileID: 1816932806}
+  crankSocket: {fileID: 22155948}
+  mountedCrank: {fileID: 0}
   done: 0
+  unstable: 0
 --- !u!4 &1718761329
 Transform:
   m_ObjectHideFlags: 0
@@ -5220,6 +5294,7 @@ Transform:
   - {fileID: 709513446}
   - {fileID: 1816932806}
   - {fileID: 1179894778}
+  - {fileID: 22155948}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1742055391
@@ -6120,6 +6195,37 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 525853990749090806, guid: aa2f386d21423fb4d8502447c314b01c, type: 3}
+--- !u!1 &1971059558
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1971059559}
+  m_Layer: 0
+  m_Name: Soporte manivela
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1971059559
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1971059558}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.7071068, y: 0, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 1.2, z: -0.52}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2079945873}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1975673025
 GameObject:
   m_ObjectHideFlags: 0
@@ -6508,8 +6614,9 @@ MonoBehaviour:
   hand: {fileID: 1645378922}
   game: {fileID: 779294658}
   moveSpeed: 3.2
+  runMultiplier: 1.75
   mouseSensitivity: 0.11
-  stickSensitivity: 115
+  keyboardLookSpeed: 115
   reach: 2.6
 --- !u!4 &2004518567
 Transform:
@@ -6619,7 +6726,10 @@ MonoBehaviour:
   game: {fileID: 779294658}
   indicator: {fileID: 636770800}
   wheel: {fileID: 1608045754}
+  crankSocket: {fileID: 1971059559}
+  mountedCrank: {fileID: 0}
   done: 0
+  unstable: 0
 --- !u!4 &2079945873
 Transform:
   m_ObjectHideFlags: 0
@@ -6637,6 +6747,7 @@ Transform:
   - {fileID: 1881741793}
   - {fileID: 1608045754}
   - {fileID: 636770801}
+  - {fileID: 1971059559}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2135001456
@@ -6809,7 +6920,6 @@ SceneRoots:
   - {fileID: 765641623}
   - {fileID: 303587551}
   - {fileID: 716074950}
-  - {fileID: 1588384858}
   - {fileID: 1718761329}
   - {fileID: 393935326}
   - {fileID: 2079945873}
@@ -6818,3 +6928,4 @@ SceneRoots:
   - {fileID: 295084661}
   - {fileID: 1659874649}
   - {fileID: 1887772097}
+  - {fileID: 1588384858}

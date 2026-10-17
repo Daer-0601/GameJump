@@ -185,6 +185,12 @@ public static class DemoBuilder
         mechanism.wheel = wheel.transform;
         mechanism.indicator = PointLight("Estado " + symbol, position + new Vector3(0, 1.7f, -0.7f), new Color(0.9f, 0.3f, 0.1f), 1.4f, 2.6f);
         mechanism.indicator.transform.SetParent(root.transform, true);
+        var socket = new GameObject("Soporte manivela");
+        socket.transform.SetParent(root.transform, false);
+        socket.transform.localPosition = new Vector3(0f, 1.2f, -0.52f);
+        socket.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+        mechanism.crankSocket = socket.transform;
+
         return mechanism;
     }
 

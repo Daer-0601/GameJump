@@ -26,6 +26,20 @@ namespace Gamejam2026
             transform.localRotation = Quaternion.identity;
         }
 
+        public void AttachTo(Transform socket)
+        {
+            if (owner != null)
+            {
+                owner.Held = null;
+                owner = null;
+            }
+            transform.SetParent(socket, false);
+            transform.localPosition = Vector3.zero;
+            transform.localRotation = Quaternion.identity;
+            if (colliders == null) colliders = GetComponentsInChildren<Collider>();
+            foreach (var col in colliders) col.enabled = false;
+        }
+
         public void Drop()
         {
             if (owner == null) return;

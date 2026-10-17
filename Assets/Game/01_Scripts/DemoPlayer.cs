@@ -100,11 +100,11 @@ namespace Gamejam2026
                     }
                     else
                     {
-                        Hint = mechanism.done ? "Mecanismo completado" : "Usar manivela en " + mechanism.symbol;
+                        Hint = mechanism.GetHint(this);
                         if (use && Time.time >= nextUse)
                         {
-                            nextUse = Time.time + 0.7f;
-                            mechanism.Use(this);
+                            nextUse = Time.time + 0.5f;
+                            mechanism.Interact(this);
                         }
                     }
                 }
