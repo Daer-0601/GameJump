@@ -214,18 +214,6 @@ public class JamPlayProbe : MonoBehaviour
         File.AppendAllText("Temp/JamPlayCheck.txt", "ALL_PASSED\n");
     }
 
-    static void PlaceCrank(DemoGame game, DemoPlayer player, DemoMechanism target)
-    {
-        if (target.HasCrank) return;
-        foreach (var mechanism in game.mechanisms)
-        {
-            if (!mechanism.HasCrank) continue;
-            mechanism.DetachCrank(player);
-            break;
-        }
-        target.Use(player);
-    }
-
     static void Position(DemoPlayer player, Vector3 position, Vector3 lookAt)
     {
         var controller = player.GetComponent<CharacterController>();
