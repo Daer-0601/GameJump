@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 namespace Gamejam2026
@@ -9,6 +10,7 @@ namespace Gamejam2026
         public DemoPlayer owner;
         public Light candleLight;
         Collider[] colliders;
+        Coroutine useAnimation;
 
         void Awake()
         {
@@ -43,6 +45,11 @@ namespace Gamejam2026
         public void Drop()
         {
             if (owner == null) return;
+            if (useAnimation != null)
+            {
+                StopCoroutine(useAnimation);
+                useAnimation = null;
+            }
             var player = owner;
             var origin = player.transform.position + Vector3.up * 0.7f;
             var direction = Vector3.ProjectOnPlane(player.view.transform.forward, Vector3.up).normalized;
@@ -57,6 +64,35 @@ namespace Gamejam2026
             transform.position = position;
             transform.rotation = Quaternion.Euler(0f, player.transform.eulerAngles.y, 0f);
             foreach (var col in colliders) col.enabled = true;
+        }
+
+        public void AnimateUse(Transform socket)
+        {
+            if (isCandle || !owner || !socket) return;
+            if (useAnimation != null) StopCoroutine(useAnimation);
+            useAnimation = StartCoroutine(Insert(socket));
+        }
+
+        IEnumerator Insert(Transform socket)
+        {
+            Vector3 localStart = transform.localPosition;
+            Quaternion rotationStart = transform.localRotation;
+            float elapsed = 0f;
+            while (elapsed < 0.42f && owner && socket)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float amount = Mathf.Sin(Mathf.Clamp01(elapsed / 0.42f) * Mathf.PI);
+                Vector3 target = owner.hand.InverseTransformPoint(socket.position + socket.forward * 0.04f);
+                transform.localPosition = Vector3.Lerp(localStart, target, amount * 0.9f);
+                transform.localRotation = rotationStart * Quaternion.Euler(0f, 0f, amount * 85f);
+                yield return null;
+            }
+            if (owner)
+            {
+                transform.localPosition = Vector3.zero;
+                transform.localRotation = Quaternion.identity;
+            }
+            useAnimation = null;
         }
     }
 }

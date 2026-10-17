@@ -20,6 +20,8 @@ namespace Gamejam2026
         public string Hint { get; private set; }
         public string Message { get; private set; }
         public float MessageUntil { get; private set; }
+        public DemoMechanism Stabilizing { get; private set; }
+        DemoClue readingClue;
         CharacterController controller;
         AudioSource footstepsSource;
         float pitch;
@@ -38,12 +40,18 @@ namespace Gamejam2026
 
         public void Tell(string text, float seconds = 3f)
         {
+            readingClue = null;
             Message = text;
             MessageUntil = Time.unscaledTime + seconds;
         }
 
         void Update()
         {
+            if (readingClue && !readingClue.CanRead(game))
+            {
+                MessageUntil = 0f;
+                readingClue = null;
+            }
             if (!game || !game.PlayerInputEnabled) return;
             var input = DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime);
             Move(input);
@@ -79,6 +87,7 @@ namespace Gamejam2026
         void Interact(bool use, bool useHeld, bool drop)
         {
             Hint = string.Empty;
+            Stabilizing = null;
             var ray = new Ray(view.transform.position, view.transform.forward);
             if (Physics.Raycast(ray, out var hit, reach, ~0, QueryTriggerInteraction.Ignore))
             {
@@ -95,6 +104,7 @@ namespace Gamejam2026
                     if (mechanism.unstable)
                     {
                         mechanism.Hold(this, useHeld);
+                        if (useHeld && mechanism.unstable) Stabilizing = mechanism;
                         int percent = Mathf.RoundToInt(mechanism.Hold01 * 100f);
                         Hint = useHeld ? "Estabilizando " + mechanism.symbol + "  " + percent + "%" : "Mantener para estabilizar " + mechanism.symbol;
                     }
@@ -110,8 +120,13 @@ namespace Gamejam2026
                 }
                 else if (clue != null)
                 {
-                    Hint = "Leer la inscripcion";
-                    if (use) Tell(game.SequenceText, 10f);
+                    bool readable = clue.CanRead(game);
+                    Hint = readable ? "Leer la inscripción" : "Acerca la vela para leer";
+                    if (use && readable)
+                    {
+                        Tell(game.SequenceText, 10f);
+                        readingClue = clue;
+                    }
                 }
             }
             if (drop && Held != null) Held.Drop();

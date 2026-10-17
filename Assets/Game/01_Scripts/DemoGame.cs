@@ -27,17 +27,18 @@ namespace Gamejam2026
         [Range(0f, 1f)] public float sfxVolume = 0.8f;
         [Range(0f, 100f)] public float dangerAlarmThreshold = 70f;
         public float dangerAlarmInterval = 5f;
-        public float dangerPerSecond = 0.33f;
-        public float darknessPenalty = 0.3f;
-        public float errorPenalty = 10f;
-        public float successRelief = 9f;
-        public float unstablePenalty = 2f;
-        public float stabilizeRelief = 6f;
-        public float destabilizeMin = 35f;
-        public float destabilizeMax = 45f;
+        public float dangerPerSecond = 0.31f;
+        public float darknessPenalty = 0.6f;
+        public float errorPenalty = 12f;
+        public float successRelief = 10f;
+        public float unstablePenalty = 1.25f;
+        public float stabilizeRelief = 8f;
+        public float destabilizeMin = 38f;
+        public float destabilizeMax = 52f;
         public bool Playing => started && !paused && !finished;
         public bool PlayerInputEnabled => Playing && Time.frameCount > inputResumeFrame;
         public float Danger { get; private set; }
+        public float Disturbance => Mathf.Clamp01((disturbanceUntil - elapsed) / 1.4f);
         public string SequenceText => "ORDEN: " + mechanisms[order[0]].symbol + " > " + mechanisms[order[1]].symbol + " > " + mechanisms[order[2]].symbol;
         public float progress => completed / 3f;
 
@@ -54,8 +55,9 @@ namespace Gamejam2026
         float disturbanceUntil;
         float nextDangerAlarm;
         float nextDestabilize = -1f;
-        float[] lightLevels;
         AudioSource sfxSource;
+        DemoAtmosphere atmosphere;
+        AudioClip errorClip;
 
         string name1 = "";
         string name2 = "";
@@ -127,14 +129,31 @@ namespace Gamejam2026
                 int j = UnityEngine.Random.Range(0, i + 1);
                 (order[i], order[j]) = (order[j], order[i]);
             }
-            lightLevels = new float[atmosphereLights.Length];
-            for (int i = 0; i < lightLevels.Length; i++) lightLevels[i] = atmosphereLights[i].intensity;
             nextDisturbance = 12f;
             sfxSource = gameObject.AddComponent<AudioSource>();
             sfxSource.playOnAwake = false;
             sfxSource.spatialBlend = 0f;
             sfxSource.volume = 1f;
+            if (dangerClip)
+            {
+                dangerClip.LoadAudioData();
+                int frames = Mathf.Min(dangerClip.samples, Mathf.RoundToInt(dangerClip.frequency * 0.35f));
+                var samples = new float[frames * dangerClip.channels];
+                if (dangerClip.GetData(samples, 0))
+                {
+                    for (int frame = 0; frame < frames; frame++)
+                    {
+                        float fade = Mathf.Min(1f, Mathf.Min(frame, frames - frame - 1) / (dangerClip.frequency * 0.02f));
+                        for (int c = 0; c < dangerClip.channels; c++) samples[frame * dangerClip.channels + c] *= fade;
+                    }
+                    errorClip = AudioClip.Create("Error breve - alarma existente", frames, dangerClip.channels, dangerClip.frequency, false);
+                    errorClip.SetData(samples, 0);
+                }
+            }
             EquipCrew();
+            atmosphere = GetComponent<DemoAtmosphere>();
+            if (!atmosphere) atmosphere = gameObject.AddComponent<DemoAtmosphere>();
+            atmosphere.Initialize(this);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             if (ambience) ambience.Play();
@@ -211,12 +230,6 @@ namespace Gamejam2026
                 disturbanceUntil = elapsed + 1.4f;
                 nextDisturbance = elapsed + UnityEngine.Random.Range(14f, 24f) * Mathf.Lerp(1f, 0.6f, Danger / 100f);
             }
-            for (int i = 0; i < atmosphereLights.Length; i++)
-            {
-                if (!atmosphereLights[i]) continue;
-                float flicker = elapsed < disturbanceUntil ? Mathf.Lerp(0.1f, 1f, Mathf.PerlinNoise(elapsed * 13f, i)) : 1f;
-                atmosphereLights[i].intensity = lightLevels[i] * flicker;
-            }
             if (ambience) ambience.volume = Mathf.Lerp(0.16f, 0.42f, Danger / 100f);
         }
 
@@ -227,7 +240,9 @@ namespace Gamejam2026
             {
                 Danger = Mathf.Min(100f, Danger + errorPenalty);
                 disturbanceUntil = elapsed + 2f;
-                player.Tell("Orden incorrecto. Los pasos correctos se conservan.");
+                if (atmosphere) atmosphere.WrongOrder();
+                PlaySfx(errorClip);
+                foreach (var teammate in players) teammate.Tell("¡CLAC! Orden incorrecto. Los pasos correctos se conservan.");
                 if (Danger >= 100f) Finish(false);
                 return;
             }
@@ -248,7 +263,7 @@ namespace Gamejam2026
             if (!Playing || mechanism == null || player == null) return;
             PlaySfx(gearsClip);
             Danger = Mathf.Max(0f, Danger - stabilizeRelief);
-            foreach (var teammate in players) teammate.Tell(mechanism.symbol + " estabilizado.");
+            foreach (var teammate in players) teammate.Tell("¡CLONC! " + mechanism.symbol + " estabilizado. −" + stabilizeRelief.ToString("0") + "% peligro.");
             TryWin();
         }
 
@@ -339,6 +354,7 @@ namespace Gamejam2026
             if (finished) return;
             finished = true;
             won = success;
+            if (atmosphere) atmosphere.Finish(success);
             if (!success) PlaySfx(jumpScareClip);
             Time.timeScale = 0f;
             LockPointer();
@@ -374,6 +390,7 @@ namespace Gamejam2026
             Cursor.visible = true;
             if (grain) Destroy(grain);
             if (vignette) Destroy(vignette);
+            if (errorClip) Destroy(errorClip);
         }
 
         void PauseNow()
@@ -768,6 +785,8 @@ namespace Gamejam2026
             {
                 float width = Screen.width / scale;
                 float height = Screen.height / scale;
+                if (atmosphere && atmosphere.Blackout > 0f)
+                    Box(new Rect(0f, 0f, width, height), new Color(0f, 0f, 0f, atmosphere.Blackout));
                 if (overlay >= 0)
                 {
                     LayoutOverlay(width, height);
@@ -882,7 +901,9 @@ namespace Gamejam2026
 
         void DrawBackdrop(float width, float height)
         {
-            Box(new Rect(0f, 0f, width, height), Wash);
+            Color backdrop = finished && won ? new Color(Wash.r, Wash.g, Wash.b, 0.45f) : Wash;
+            if (finished && !won && atmosphere) backdrop.a = Mathf.Lerp(0.15f, Wash.a, atmosphere.Blackout);
+            Box(new Rect(0f, 0f, width, height), backdrop);
             if (vignette) GUI.DrawTexture(new Rect(0f, 0f, width, height), vignette, ScaleMode.StretchToFill, true);
             if (grain)
             {
@@ -1004,6 +1025,12 @@ namespace Gamejam2026
                 Box(new Rect(centerX - 0.5f, centerY - 7f, 1f, 14f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
 
                 string prompt = players[i].Hint;
+                var stabilizing = players[i].Stabilizing;
+                if (stabilizing && stabilizing.unstable)
+                {
+                    Box(new Rect(left + 36f, height - 132f, half - 72f, 8f), new Color(0.12f, 0.1f, 0.08f));
+                    Box(new Rect(left + 36f, height - 132f, (half - 72f) * stabilizing.Hold01, 8f), Paper);
+                }
                 if (!string.IsNullOrEmpty(prompt))
                 {
                     Box(new Rect(left + 22f, height - 112f, half - 44f, 64f), new Color(0.015f, 0.014f, 0.012f, 0.9f));

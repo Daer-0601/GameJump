@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System;
 using System.Linq;
 using Gamejam2026;
@@ -21,6 +22,18 @@ public static class DemoCheck
         EditorSceneManager.OpenScene("Assets/Game/00_Scenes/Demo.unity");
         SessionState.SetInt(Active, 1);
         EditorApplication.isPlaying = true;
+    }
+
+    static void PlaceCrank(DemoGame game, DemoPlayer player, DemoMechanism target)
+    {
+        if (target.HasCrank) return;
+        foreach (var mechanism in game.mechanisms)
+        {
+            if (!mechanism.HasCrank) continue;
+            mechanism.DetachCrank(player);
+            break;
+        }
+        target.Use(player);
     }
 
     static void Require(bool condition, string message)
@@ -67,12 +80,12 @@ public static class DemoCheck
                 float initialDanger = game.Danger;
                 wrong.Use(player);
                 Require(game.Danger > initialDanger && game.progress == 0, "error aumenta peligro sin avanzar");
-                first.Use(player);
+                PlaceCrank(game, player, first);
                 Require(first.done && game.progress > 0, "paso correcto avanza");
                 float beforeRepeat = game.Danger;
                 first.Use(player);
                 Require(game.Danger == beforeRepeat, "paso completado no se castiga");
-                foreach (string symbol in sequence.Skip(1)) game.mechanisms.First(m => m.symbol == symbol).Use(player);
+                foreach (string symbol in sequence.Skip(1)) PlaceCrank(game, player, game.mechanisms.First(m => m.symbol == symbol));
                 Require(game.progress == 1 && !game.Playing, "secuencia completa gana");
                 game.Restart();
                 SessionState.SetInt(Active, 2);
@@ -88,7 +101,11 @@ public static class DemoCheck
             tool.PickUp(player);
             string next = game.SequenceText.Replace("ORDEN: ", "").Split(" > ")[0];
             var incorrect = game.mechanisms.First(m => m.symbol != next);
-            for (int i = 0; i < 12 && game.Playing; i++) incorrect.Use(player);
+            for (int i = 0; i < 12 && game.Playing; i++)
+            {
+                if (incorrect.HasCrank) incorrect.DetachCrank(player);
+                incorrect.Use(player);
+            }
             Require(game.Danger >= 100f && !game.Playing && game.progress == 0, "limite de peligro provoca derrota");
             SessionState.SetInt(Active, 0);
             Debug.Log("DEMO_CHECK_ALL_PASSED");
@@ -102,3 +119,5 @@ public static class DemoCheck
         }
     }
 }
+
+#endif
