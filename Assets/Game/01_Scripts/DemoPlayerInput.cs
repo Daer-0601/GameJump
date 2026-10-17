@@ -7,7 +7,7 @@ namespace Gamejam2026
     public static class DemoPlayerInput
     {
         public const string Help = "J1: WASD, E usar, mantener E estabiliza, Shift izq. correr, Q soltar; F/H y T/G mirar (o mouse).\n"
-            + "J2: flechas, U usar, mantener U estabiliza, Shift der. correr, O soltar; J/L e I/K mirar. Esc pausa.";
+            + "J2: flechas, U usar, mantener U estabiliza, Shift der. correr, O soltar; J/L e I/K mirar, Ctrl der. precisión. Esc pausa.";
 
         public readonly struct State
         {
@@ -32,7 +32,8 @@ namespace Gamejam2026
         public static string UseLabel(int playerIndex) => playerIndex == 0 ? "E" : "U";
         public static string DropLabel(int playerIndex) => playerIndex == 0 ? "Q" : "O";
 
-        public static State Read(int playerIndex, float keyboardLookSpeed, float mouseSensitivity, float deltaTime)
+        public static State Read(int playerIndex, float keyboardLookSpeed, float mouseSensitivity, float deltaTime,
+            float preciseLookMultiplier = 0.35f)
         {
             var keyboard = Keyboard.current;
             if (keyboard == null || playerIndex < 0 || playerIndex > 1) return default;
@@ -59,8 +60,10 @@ namespace Gamejam2026
             {
                 move = new Vector2(Axis(keyboard.leftArrowKey.isPressed, keyboard.rightArrowKey.isPressed),
                     Axis(keyboard.downArrowKey.isPressed, keyboard.upArrowKey.isPressed));
-                look = new Vector2(Axis(keyboard.jKey.isPressed, keyboard.lKey.isPressed),
-                    Axis(keyboard.kKey.isPressed, keyboard.iKey.isPressed)) * keyboardLookSpeed * deltaTime;
+                var lookAxis = new Vector2(Axis(keyboard.jKey.isPressed, keyboard.lKey.isPressed),
+                    Axis(keyboard.kKey.isPressed, keyboard.iKey.isPressed));
+                float lookMultiplier = keyboard.rightCtrlKey.isPressed ? Mathf.Clamp(preciseLookMultiplier, 0.1f, 1f) : 1f;
+                look = Vector2.ClampMagnitude(lookAxis, 1f) * keyboardLookSpeed * lookMultiplier * deltaTime;
                 run = keyboard.rightShiftKey.isPressed;
                 use = keyboard.uKey.wasPressedThisFrame;
                 useHeld = keyboard.uKey.isPressed;
