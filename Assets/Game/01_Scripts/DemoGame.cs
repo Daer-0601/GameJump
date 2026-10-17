@@ -11,6 +11,14 @@ namespace Gamejam2026
         public CarryObject[] candles;
         public Light[] atmosphereLights;
         public AudioSource ambience;
+        public AudioClip walkingClip;
+        public AudioClip lightClip;
+        public AudioClip jumpScareClip;
+        public AudioClip dangerClip;
+        public AudioClip gearsClip;
+        [Range(0f, 1f)] public float sfxVolume = 0.8f;
+        [Range(0f, 100f)] public float dangerAlarmThreshold = 70f;
+        public float dangerAlarmInterval = 5f;
         public float dangerPerSecond = 0.33f;
         public float darknessPenalty = 0.3f;
         public float errorPenalty = 10f;
@@ -28,7 +36,9 @@ namespace Gamejam2026
         float elapsed;
         float nextDisturbance;
         float disturbanceUntil;
+        float nextDangerAlarm;
         float[] lightLevels;
+        AudioSource sfxSource;
         GUIStyle titleStyle;
         GUIStyle textStyle;
         GUIStyle smallStyle;
@@ -46,6 +56,10 @@ namespace Gamejam2026
             lightLevels = new float[atmosphereLights.Length];
             for (int i = 0; i < lightLevels.Length; i++) lightLevels[i] = atmosphereLights[i].intensity;
             nextDisturbance = 12f;
+            sfxSource = gameObject.AddComponent<AudioSource>();
+            sfxSource.playOnAwake = false;
+            sfxSource.spatialBlend = 0f;
+            sfxSource.volume = 1f;
             for (int i = 0; i < players.Length && i < candles.Length; i++) candles[i].PickUp(players[i]);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -115,6 +129,11 @@ namespace Gamejam2026
                 if (!lit) rate += darknessPenalty;
             }
             Danger = Mathf.Clamp(Danger + rate * Time.deltaTime, 0f, 100f);
+            if (Danger >= dangerAlarmThreshold && elapsed >= nextDangerAlarm)
+            {
+                PlaySfx(dangerClip);
+                nextDangerAlarm = elapsed + dangerAlarmInterval;
+            }
             if (Danger >= 100f) Finish(false);
 
             if (elapsed >= nextDisturbance)
@@ -144,6 +163,8 @@ namespace Gamejam2026
             }
             mechanism.done = true;
             completed++;
+            PlaySfx(gearsClip);
+            PlaySfx(lightClip);
             Danger = Mathf.Max(0f, Danger - successRelief);
             foreach (var teammate in players) teammate.Tell(mechanism.symbol + " completado. " + completed + "/3");
             if (completed == order.Length) Finish(true);
@@ -151,10 +172,22 @@ namespace Gamejam2026
 
         void Finish(bool success)
         {
+            if (finished) return;
             finished = true;
             won = success;
+            PlaySfx(jumpScareClip);
             Time.timeScale = 0f;
             LockPointer();
+        }
+
+        void PlaySfx(AudioClip clip)
+        {
+            if (clip && sfxSource) sfxSource.PlayOneShot(clip, sfxVolume);
+        }
+
+        public void PlayFootstep(AudioSource source)
+        {
+            if (walkingClip && source) source.PlayOneShot(walkingClip, sfxVolume);
         }
 
         void OnApplicationFocus(bool focus)

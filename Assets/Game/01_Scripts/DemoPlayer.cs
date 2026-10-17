@@ -19,13 +19,19 @@ namespace Gamejam2026
         public string Message { get; private set; }
         public float MessageUntil { get; private set; }
         CharacterController controller;
+        AudioSource footstepsSource;
         float pitch;
         float fallSpeed;
         float nextUse;
+        float footstepTimer;
+        const float FootstepInterval = 0.42f;
 
         void Awake()
         {
             controller = GetComponent<CharacterController>();
+            footstepsSource = gameObject.AddComponent<AudioSource>();
+            footstepsSource.playOnAwake = false;
+            footstepsSource.spatialBlend = 0f;
         }
 
         public void Tell(string text, float seconds = 3f)
@@ -69,6 +75,20 @@ namespace Gamejam2026
             fallSpeed += Physics.gravity.y * Time.deltaTime;
             var motion = transform.TransformDirection(new Vector3(move.x, 0f, move.y));
             controller.Move((Vector3.ClampMagnitude(motion, 1f) * moveSpeed + Vector3.up * fallSpeed) * Time.deltaTime);
+
+            if (controller.isGrounded && move.sqrMagnitude > 0.04f)
+            {
+                footstepTimer -= Time.deltaTime;
+                if (footstepTimer <= 0f)
+                {
+                    game.PlayFootstep(footstepsSource);
+                    footstepTimer = FootstepInterval;
+                }
+            }
+            else
+            {
+                footstepTimer = 0f;
+            }
 
             Hint = string.Empty;
             var ray = new Ray(view.transform.position, view.transform.forward);
