@@ -47,7 +47,7 @@ namespace Gamejam2026
             if (!game || !game.PlayerInputEnabled) return;
             var input = DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime);
             Move(input);
-            Interact(input.Use, input.Drop);
+            Interact(input.Use, input.UseHeld, input.Drop);
         }
 
         void Move(DemoPlayerInput.State input)
@@ -76,7 +76,7 @@ namespace Gamejam2026
             }
         }
 
-        void Interact(bool use, bool drop)
+        void Interact(bool use, bool useHeld, bool drop)
         {
             Hint = string.Empty;
             var ray = new Ray(view.transform.position, view.transform.forward);
@@ -92,11 +92,20 @@ namespace Gamejam2026
                 }
                 else if (mechanism != null)
                 {
-                    Hint = mechanism.done ? "Mecanismo completado" : "Usar manivela en " + mechanism.symbol;
-                    if (use && Time.time >= nextUse)
+                    if (mechanism.unstable)
                     {
-                        nextUse = Time.time + 0.7f;
-                        mechanism.Use(this);
+                        mechanism.Hold(this, useHeld);
+                        int percent = Mathf.RoundToInt(mechanism.Hold01 * 100f);
+                        Hint = useHeld ? "Estabilizando " + mechanism.symbol + "  " + percent + "%" : "Mantener para estabilizar " + mechanism.symbol;
+                    }
+                    else
+                    {
+                        Hint = mechanism.done ? "Mecanismo completado" : "Usar manivela en " + mechanism.symbol;
+                        if (use && Time.time >= nextUse)
+                        {
+                            nextUse = Time.time + 0.7f;
+                            mechanism.Use(this);
+                        }
                     }
                 }
                 else if (clue != null)
