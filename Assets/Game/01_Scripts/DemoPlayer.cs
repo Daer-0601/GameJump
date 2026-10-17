@@ -174,10 +174,16 @@ namespace Gamejam2026
             var ray = new Ray(view.transform.position, view.transform.forward);
             if (Physics.Raycast(ray, out var hit, reach, ~0, QueryTriggerInteraction.Ignore))
             {
+                var station = hit.collider.GetComponentInParent<RecintoStation>();
                 var item = hit.collider.GetComponentInParent<CarryObject>();
                 var mechanism = hit.collider.GetComponentInParent<DemoMechanism>();
                 var clue = hit.collider.GetComponentInParent<DemoClue>();
-                if (item != null && item.owner == null)
+                if (station != null)
+                {
+                    Hint = station.Hint(this);
+                    station.Interact(this, use, useHeld);
+                }
+                else if (item != null && item.owner == null)
                 {
                     Hint = Held == null ? UseHint("Recoger " + item.displayName) : "Manos ocupadas: suelta el objeto primero";
                     if (use && Held == null)
@@ -214,7 +220,9 @@ namespace Gamejam2026
                 {
                     bool readable = clue.CanRead(game);
                     string action = clue.nextSymbolOnly ? "Leer siguiente símbolo" : "Leer la inscripción";
-                    Hint = readable ? UseHint(action) : "Acerca la vela para leer";
+                    Hint = game.Investigation && !game.Investigation.Ready
+                        ? "La inscripción está incompleta: busquen tres registros"
+                        : readable ? UseHint(action) : "Acerca la vela para leer";
                     if (clue.nextSymbolOnly && readable && string.IsNullOrEmpty(game.NextSymbol)) Hint = "No quedan símbolos pendientes";
                     if (use && clue.TryRead(game, out string text))
                     {

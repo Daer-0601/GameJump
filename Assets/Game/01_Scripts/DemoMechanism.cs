@@ -105,6 +105,8 @@ namespace Gamejam2026
         public string GetHint(DemoPlayer player)
         {
             if (player == null) return string.Empty;
+            if (!done && game.Investigation && !game.Investigation.Ready)
+                return "Faltan registros, contraste o red auxiliar";
             string useKey = "[" + DemoPlayerInput.UseLabel(player.playerIndex) + "] ";
 
             if (HasCrank)
@@ -126,6 +128,11 @@ namespace Gamejam2026
         public bool AttachCrank(CarryObject crank, DemoPlayer player)
         {
             if (HasCrank || crank == null || crank.isCandle) return false;
+            if (!done && game.Investigation && !game.Investigation.Ready)
+            {
+                if (player) player.Tell("Primero completen registros, consola y red auxiliar.");
+                return false;
+            }
             mountedCrank = crank;
             crank.AttachTo(crankSocket);
             if (player != null && player.Held == crank)

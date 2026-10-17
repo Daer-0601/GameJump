@@ -38,8 +38,8 @@ namespace Gamejam2026
         [Range(80f, 99f)] public float criticalDanger = 92f;
         [Range(0.4f, 1f)] public float hitchScale = 0.8f;
         public float hitchSeconds = 0.12f;
-        public float dangerPerSecond = 0.31f;
-        public float darknessPenalty = 0.6f;
+        [HideInInspector] public float dangerPerSecond = 0.31f; // Kept for older editor setup tools.
+        [HideInInspector] public float darknessPenalty = 0.6f; // No longer used by the expedition.
         public float errorPenalty = 12f;
         public float successRelief = 10f;
         public float unstablePenalty = 1.25f;
@@ -55,6 +55,8 @@ namespace Gamejam2026
         public float progress => completed / 3f;
         public int CompletedCount => completed;
         public float ElapsedSeconds => elapsed;
+        public RecintoInvestigation Investigation { get; private set; }
+        public string SymbolAt(int index) => index >= 0 && index < order.Length ? mechanisms[order[index]].symbol : string.Empty;
         public string NextSymbol => completed < order.Length ? mechanisms[order[completed]].symbol : string.Empty;
         public event Action<DemoMechanism> FirstMechanismCompleted;
         public event Action<bool> RoundFinished;
@@ -186,6 +188,8 @@ namespace Gamejam2026
             atmosphere = GetComponent<DemoAtmosphere>();
             if (!atmosphere) atmosphere = gameObject.AddComponent<DemoAtmosphere>();
             atmosphere.Initialize(this);
+            Investigation = gameObject.AddComponent<RecintoInvestigation>();
+            Investigation.Initialize(this);
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             if (ambience) ambience.Play();
@@ -245,17 +249,8 @@ namespace Gamejam2026
 
             elapsed += Time.deltaTime;
             DestabilizeDue();
-            float rate = dangerPerSecond + CountUnstable() * unstablePenalty;
-            foreach (var player in players)
-            {
-                bool lit = false;
-                foreach (var candle in candles)
-                {
-                    if (!candle || !candle.gameObject.activeInHierarchy || !candle.candleLight || !candle.candleLight.enabled) continue;
-                    if (Vector3.Distance(player.transform.position + Vector3.up, candle.candleLight.transform.position) < 5f) lit = true;
-                }
-                if (!lit) rate += darknessPenalty;
-            }
+            // Investigation starts without a death clock. Only unresolved damage keeps pressure rising.
+            float rate = CountUnstable() * unstablePenalty;
             Danger = Mathf.Clamp(Danger + rate * Time.deltaTime, 0f, 100f);
             NoteDangerBand();
             if (!hitchSpent && Danger >= criticalDanger && Time.timeScale > 0.95f)
@@ -281,6 +276,11 @@ namespace Gamejam2026
         public void Activate(DemoMechanism mechanism, DemoPlayer player)
         {
             if (!Playing || mechanism.done) return;
+            if (Investigation && !Investigation.Ready)
+            {
+                if (player) player.Tell("Completen registros, consola y red auxiliar antes del mecanismo.");
+                return;
+            }
             if (mechanism.id != order[completed])
             {
                 Danger = Mathf.Min(100f, Danger + errorPenalty);
@@ -288,6 +288,7 @@ namespace Gamejam2026
                 if (atmosphere) atmosphere.WrongOrder();
                 PlaySfx(errorClip);
                 foreach (var teammate in players) teammate.Tell("¡CLAC! Orden incorrecto. Los pasos correctos se conservan.");
+                if (Investigation) Investigation.OnWrongProcedure();
                 if (Danger >= 100f) Finish(false);
                 return;
             }
@@ -1278,7 +1279,7 @@ namespace Gamejam2026
         {
             DrawTracked(titleRect, "A Oscuras", glyphStyle, 7f, Paper);
             Rule(titleRect.center.x, titleRect.yMax + 2f, 168f);
-            Label(briefRect, "Uno ilumina con la vela y el otro lleva la manivela. Activen los tres mecanismos en el orden de la inscripción. Si uno se desajusta, estabilícenlo manteniendo la tecla de usar.", bodyStyle, Ash);
+            Label(briefRect, "Exploren el recinto: recuperen tres registros y contrasten la consola juntos. Activen la red auxiliar que indique el procedimiento. La manivela sirve para los mecanismos al final.", bodyStyle, Ash);
 
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
@@ -1402,13 +1403,14 @@ namespace Gamejam2026
                 if (players[i].Held && !players[i].Held.isCandle) held += " (pesada)";
                 Label(new Rect(left + 56f, 22f, half - 84f, 26f), PlayerLabel(i) + "   /   " + held, hudStyle, Paper);
                 int loose = CountUnstable();
-                string danger = completed + "/3 mecanismos    peligro " + Mathf.CeilToInt(Danger) + "%";
+                string danger = Investigation && !Investigation.Ready
+                    ? "Registros " + Investigation.EvidenceSummary + (Investigation.Contrasted ? "   consola OK" : "   falta consola")
+                        + "   red " + Investigation.PoweredCount + "/" + Investigation.RequiredPower
+                    : completed + "/3 mecanismos    recinto " + (Danger >= 90f ? "crítico" : Danger >= dangerAlarmThreshold ? "inestable" : "en observación");
                 if (loose > 0) danger += "    " + loose + (loose == 1 ? " desajustado" : " desajustados");
                 if (Danger >= dangerAlarmThreshold) danger += "    alto";
                 if (Time.unscaledTime < pulseUntil) danger += "    " + pulseText;
                 Label(new Rect(left + 56f, 52f, half - 84f, 24f), danger, hudSmallStyle, Danger >= dangerAlarmThreshold ? Accent : Ash);
-                Box(new Rect(left + 20f, height - 18f, half - 40f, 4f), new Color(0.16f, 0.15f, 0.13f, 0.9f));
-                Box(new Rect(left + 20f, height - 18f, (half - 40f) * Danger / 100f, 4f), Paper);
 
                 float centerX = left + half * 0.5f;
                 float centerY = height * 0.5f;

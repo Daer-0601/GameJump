@@ -6,8 +6,8 @@ namespace Gamejam2026
     // Centraliza los controles; no mueve objetos ni modifica el estado de la partida.
     public static class DemoPlayerInput
     {
-        public const string Help = "J1: WASD, E usar, mantener E estabiliza, Shift izq. correr, Q soltar; F/H y T/G mirar (o mouse).\n"
-            + "J2: flechas, U usar, mantener U estabiliza, Shift der. correr, O soltar; J/L e I/K mirar, Ctrl der. precisión. Esc pausa.";
+        public const string Help = "J1: WASD, E usar o mantener en puestos, Shift izq. correr, Q soltar; F/H y T/G mirar (o mouse).\n"
+            + "J2: flechas, U usar o mantener en puestos, Shift der. correr, O soltar; J/L e I/K mirar, Ctrl der. precisión. Esc pausa.";
 
         public readonly struct State
         {

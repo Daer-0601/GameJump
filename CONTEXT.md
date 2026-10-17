@@ -16,10 +16,10 @@ Pausa, victoria y derrota usan esa misma interfaz. Desde la pausa también se ab
 
 ## Flujo y reglas del juego
 
-1. Los jugadores comienzan en el centro del escenario y pueden leer una inscripción que muestra el orden aleatorio de tres mecanismos.
+1. Cada expedición distribuye aleatoriamente seis puestos entre ocho ubicaciones del recinto: tres registros, una consola de contraste para ambos jugadores y dos luces auxiliares. Entre cero y dos luces son necesarias según la partida. Los registros descubren el orden de los mecanismos; la inscripción original se bloquea hasta completar la investigación.
 2. Cada jugador tiene una mano. Para llevar la manivela, debe soltar la vela; las velas continúan iluminando cuando están en el suelo.
 3. Los jugadores encuentran y activan los mecanismos A, B y C en el orden indicado.
-4. El peligro aumenta con el tiempo, por errores y cuando un jugador está lejos de la luz.
+4. La espera pasiva y la oscuridad ya no aumentan el peligro. Los errores de procedimiento y los mecanismos desajustados sí lo hacen. Un error también apaga una luz auxiliar activa o extiende la contaminación orgánica.
 5. Completar la secuencia gana la partida. Llegar al 100% de peligro la termina en derrota. El prototipo permite reiniciar.
 
 El diseño previsto contempla pantalla dividida local, una vela móvil, la manivela como objeto compartido y señales de audio y luz para comunicar estados. No hay multijugador en red, ni una escena de menú aparte, ni reparación de bombillas, ni campaña.
@@ -27,7 +27,7 @@ El diseño previsto contempla pantalla dividida local, una vela móvil, la maniv
 ## Estructura actual
 
 - `Assets/Game/00_Scenes/Demo.unity`: escena principal del prototipo.
-- `Assets/Game/01_Scripts/`: scripts de partida, jugador, objetos, mecanismos e inscripción. Menú, pausa, finales y HUD viven en `DemoGame` con IMGUI; no hay otra escena de interfaz.
+- `Assets/Game/01_Scripts/`: scripts de partida, jugador, objetos, mecanismos, inscripción e investigación. `RecintoInvestigation` distribuye los puestos al iniciar, `RecintoStation` resuelve sus interacciones y `RecintoWorm` anima decoración pequeña. Menú, pausa, finales y HUD viven en `DemoGame` con IMGUI; no hay otra escena de interfaz.
 - `Assets/Game/02_Materials/`: materiales del escenario.
 - `Assets/Game/03_Editor/`: `DemoBuilder` y `DemoCheck`, herramientas del editor. El builder puede reemplazar el montaje de la escena; inspecciona su comportamiento antes de ejecutarlo.
 - `Assets/Game/04_Audio/`: ambiente y efectos de sonido.
@@ -50,6 +50,8 @@ Comprueba los controles en código antes de cambiarlos y mantén señales claras
 - La interfaz debe ayudar a coordinarse: nombres, orden, progreso, peligro, objeto que lleva cada jugador, interacción disponible, pausa y resultado.
 - En pantalla dividida, diseña para que cada mitad conserve jerarquía, legibilidad y espacio útil.
 - El sonido y la iluminación deben reforzar estados reales del juego y tener niveles de volumen razonables. El ambiente tiene dos loops: `AmbientBackground` a volumen fijo y `Ambiente - audio original CC0`, cuyo volumen sube de 0.16 a 0.42 con el peligro. El control de ambiente los escala a los dos. La alarma, el desajuste, el engranaje, la apertura del paso y el susto final son efectos aparte.
+- Los puestos, brotes orgánicos y cuatro piezas de utilería reutilizadas del mapa se generan al iniciar la partida. Dos cuerpos cubiertos importados aparecen en ubicaciones del recorrido: uno junto al depósito y otro en una de tres zonas variables. Conservan la rotación de importación para quedar acostados. Al acercarse a un cuerpo suena una señal breve; el primero puede cambiar de sitio después de que lo descubran, solo cuando ambos jugadores estén lejos y no miren ni el origen ni el destino. Los rótulos alterados por error tampoco se restauran mientras alguno pueda verlos. La aparición usa una malla importada de Creeping Shadow con su rotación y textura BaseColor originales y puede cruzar una abertura cercana del depósito o del taller cuando el hueco entra en el campo visual de alguno; el primer encuentro elegible ocurre y el segundo varía por partida. El modelo original tiene esqueleto de 34 huesos pero no trae clips de animación; la conversión actual a FBX conserva solo la malla, y el cruce por traslación necesita rediseño. Un ente Lovecraftian Horror aparece desde el inicio en uno de dos cuartos finales, da una señal al acercarse y permanece durante toda la partida. Falta validar en Play Mode ubicación, visibilidad y balance con dos personas.
+- Los carteles generales del recinto muestran códigos de sector. Un error de procedimiento altera temporalmente uno de esos rótulos; las marcas A/B/C de los mecanismos no se falsifican.
 - Mantén accesibles textos y señales importantes. No comuniques peligro, progreso o interacción solo mediante color o solo mediante audio.
 
 ## Assets y cambios

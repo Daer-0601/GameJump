@@ -6,17 +6,15 @@ Prototipo cooperativo local de terror para dos jugadores. Unity **6000.5.6f1**, 
 
 1. Unity Hub → Add / Agregar proyecto desde disco → seleccionar esta carpeta.
 2. Abrir con 6000.5.6f1. Esperar la importación de paquetes.
-3. Abrir `Assets/Game/Scenes/Demo.unity` y pulsar Play.
-4. Conectar un mando para jugar con teclado y mouse + mando, o dos mandos y marcar ese modo en la pantalla inicial.
-5. Pulsar Empezar. En mando, Back cambia de modo y A inicia.
+3. Abrir `Assets/Game/00_Scenes/Demo.unity` y pulsar Play.
+4. En el menú, introducir dos nombres e iniciar la expedición. La partida actual usa un teclado compartido.
 
 ## Controles
 
-- Teclado: WASD para moverse, mouse para mirar, E interactúa, Q suelta el objeto, Escape pausa.
-- Mando: stick izquierdo para moverse, derecho para mirar, A interactúa, X suelta, Start pausa.
-- En victoria o derrota: botón de reinicio, R en teclado o A en mando.
+- Jugador 1: WASD para moverse, mouse o F/H y T/G para mirar, E para usar o mantener, Q para soltar, Shift izquierdo para correr.
+- Jugador 2: flechas para moverse, J/L e I/K para mirar, U para usar o mantener, O para soltar, Shift derecho para correr. Escape pausa.
 
-Una sola mano: para agarrar la manivela hay que soltar la vela. Las velas siguen iluminando en el suelo. Encontrar la inscripción e interactuar para leer el orden; activar los tres mecanismos con la manivela. Un error aumenta el peligro, pero no borra los pasos correctos. Estar lejos de ambas velas también aumenta la presión. No hay inventario, campaña, personalización ni tareas recurrentes en este recorte.
+Una sola mano: para agarrar la manivela hay que soltar la vela. Las velas siguen iluminando en el suelo. Cada partida reparte tres registros, una consola para ambos jugadores y dos puestos de luz entre ocho ubicaciones. Los registros revelan el orden; la consola y un número variable de luces completan la preparación. Después se activan los tres mecanismos con la manivela. La espera pasiva no termina la partida. Los errores apagan una luz o extienden la contaminación y aceleran apariciones. No hay campaña ni juego en red.
 
 ## Qué editar primero
 

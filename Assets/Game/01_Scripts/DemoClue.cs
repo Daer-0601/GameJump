@@ -38,6 +38,7 @@ namespace Gamejam2026
 
         public bool CanRead(DemoGame game)
         {
+            if (game && game.Investigation && !game.Investigation.Ready) return false;
             if (!game || game.candles == null) return false;
             foreach (var candle in game.candles)
             {

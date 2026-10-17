@@ -12,6 +12,10 @@ Los recursos externos descritos aquí se descargaron gratuitamente de las págin
 
 ## Modelos y texturas
 
+- **Creeping Shadow Creature**, de **Purple.Point**. Fuente: https://sketchfab.com/3d-models/creeping-shadow-creature-free-horror-3d-model-53e77576ca0b4c5988ba2991a4bff075 . Licencia declarada: CC BY. El modelo se convirtió de GLB a FBX, se redujo su malla y se extrajo su textura BaseColor original para el material URP; la obra original sigue perteneciendo a su autor.
+- **Low Poly Dead Body Covered Game Ready**, de **-Arthur-**. Fuente: https://sketchfab.com/3d-models/low-poly-dead-body-covered-game-ready-1e6ae13f6c2e46429eaca4d22d8bdbaa . Licencia declarada: CC BY. Se usa el FBX original y su textura BaseColor como hallazgo ambiental.
+- **LOVECRAFTIAN HORROR**, de **alexalbinyana**. Fuente: https://sketchfab.com/3d-models/lovecraftian-horror-6093cbb205444e9aa7b36d7be4ed9b58 . Licencia declarada: CC BY. Se usa el FBX original y las texturas difusas de cuerpo, encías y dientes como anomalía persistente.
+
 - **3D Retro Shacks Shanties Sheds & Gantries**, de **chilly_durango**.
   Fuente: https://chilly-durango.itch.io/3dretroshacks
   Licencia declarada: CC0 1.0 Universal.
