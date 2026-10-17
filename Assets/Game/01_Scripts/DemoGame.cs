@@ -367,6 +367,8 @@ namespace Gamejam2026
 
         public void PlayFootstep(AudioSource source)
         {
+            var surfaces = GetComponent<RecintoFootsteps>();
+            if (surfaces && source) { surfaces.Play(source, sfxVolume); return; }
             if (walkingClip && source) source.PlayOneShot(walkingClip, sfxVolume);
         }
 

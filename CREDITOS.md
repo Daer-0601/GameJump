@@ -1,5 +1,13 @@
 # Assets de la demo
 
+## recinto ampliado
+
+- Texturas: Horror Texture Pack 256x256, Screaming Brain Studios, CC0. https://screamingbrainstudios.itch.io/horror-texture-pack — la página declara que no se utilizó IA generativa.
+- Audio ambiental: 100 CC0 Metal and Wood SFX, rubberduck, CC0. https://opengameart.org/content/100-cc0-metal-and-wood-sfx
+- Pasos y viento: Hazard Pay, gratuitos para uso comercial y no comercial, atribución opcional; no revender los archivos como pack. https://hazardpay.itch.io/40-free-psx-crunchy-footsteps y https://hazardpay.itch.io/free-psx-wind-weather-ambience — ambas páginas declaran que no se utilizó IA generativa.
+
+Detalles del montaje y verificación: Assets/Game/05_Mapa/LEEME.md. Se reutilizan modelos y materiales del mapa previo de la rama; no se reemplazan los sistemas de juego. El montaje, UV y código ambiental tienen asistencia de IA. El cielo usa el shader procedural estándar de Unity.
+
 Los recursos externos descritos aquí se descargaron gratuitamente de las páginas de sus autores. No se utilizaron muestras de pago. Las páginas de los tres recursos externos citados declaran «No generative AI was used». La geometría procedural propia se documenta por separado más abajo.
 
 ## Modelos y texturas
