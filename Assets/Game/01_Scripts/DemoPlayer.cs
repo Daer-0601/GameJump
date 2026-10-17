@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 namespace Gamejam2026
 {
@@ -10,9 +10,11 @@ namespace Gamejam2026
         public Camera view;
         public Transform hand;
         public DemoGame game;
-        public float moveSpeed = 3.2f;
-        public float mouseSensitivity = 0.11f;
-        public float stickSensitivity = 115f;
+        [Min(0.1f)] public float moveSpeed = 3.2f;
+        [Min(1f)] public float runMultiplier = 1.75f;
+        [Min(0f)] public float mouseSensitivity = 0.11f;
+        [FormerlySerializedAs("stickSensitivity")]
+        [Min(0f)] public float keyboardLookSpeed = 115f;
         public float reach = 2.6f;
         public CarryObject Held { get; set; }
         public string Hint { get; private set; }
@@ -42,54 +44,40 @@ namespace Gamejam2026
 
         void Update()
         {
-            if (!game || !game.Playing) return;
-            bool keyboardMode = !game.twoGamepads && playerIndex == 0;
-            int padIndex = game.twoGamepads ? playerIndex : playerIndex - 1;
-            Gamepad pad = padIndex >= 0 && Gamepad.all.Count > padIndex ? Gamepad.all[padIndex] : null;
-            var keyboard = Keyboard.current;
-            Vector2 move = Vector2.zero;
-            Vector2 look = Vector2.zero;
-            bool use = false;
-            bool drop = false;
+            if (!game || !game.PlayerInputEnabled) return;
+            var input = DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime);
+            Move(input);
+            Interact(input.Use, input.Drop);
+        }
 
-            if (keyboardMode && keyboard != null)
-            {
-                move = new Vector2((keyboard.dKey.isPressed ? 1 : 0) - (keyboard.aKey.isPressed ? 1 : 0),
-                    (keyboard.wKey.isPressed ? 1 : 0) - (keyboard.sKey.isPressed ? 1 : 0));
-                if (Mouse.current != null) look = Mouse.current.delta.ReadValue() * mouseSensitivity;
-                use = keyboard.eKey.wasPressedThisFrame;
-                drop = keyboard.qKey.wasPressedThisFrame;
-            }
-            else if (pad != null)
-            {
-                move = pad.leftStick.ReadValue();
-                look = pad.rightStick.ReadValue() * stickSensitivity * Time.deltaTime;
-                use = pad.buttonSouth.wasPressedThisFrame;
-                drop = pad.buttonWest.wasPressedThisFrame;
-            }
-
-            transform.Rotate(0f, look.x, 0f);
-            pitch = Mathf.Clamp(pitch - look.y, -75f, 75f);
+        void Move(DemoPlayerInput.State input)
+        {
+            transform.Rotate(0f, input.Look.x, 0f);
+            pitch = Mathf.Clamp(pitch - input.Look.y, -75f, 75f);
             view.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
             if (controller.isGrounded && fallSpeed < 0f) fallSpeed = -2f;
             fallSpeed += Physics.gravity.y * Time.deltaTime;
-            var motion = transform.TransformDirection(new Vector3(move.x, 0f, move.y));
-            controller.Move((Vector3.ClampMagnitude(motion, 1f) * moveSpeed + Vector3.up * fallSpeed) * Time.deltaTime);
+            float speedMultiplier = input.Run ? Mathf.Max(1f, runMultiplier) : 1f;
+            var motion = transform.TransformDirection(new Vector3(input.Move.x, 0f, input.Move.y));
+            controller.Move((motion * moveSpeed * speedMultiplier + Vector3.up * fallSpeed) * Time.deltaTime);
 
-            if (controller.isGrounded && move.sqrMagnitude > 0.04f)
+            if (controller.isGrounded && input.Move.sqrMagnitude > 0.04f)
             {
                 footstepTimer -= Time.deltaTime;
                 if (footstepTimer <= 0f)
                 {
                     game.PlayFootstep(footstepsSource);
-                    footstepTimer = FootstepInterval;
+                    footstepTimer = FootstepInterval / speedMultiplier;
                 }
             }
             else
             {
                 footstepTimer = 0f;
             }
+        }
 
+        void Interact(bool use, bool drop)
+        {
             Hint = string.Empty;
             var ray = new Ray(view.transform.position, view.transform.forward);
             if (Physics.Raycast(ray, out var hit, reach, ~0, QueryTriggerInteraction.Ignore))

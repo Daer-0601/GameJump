@@ -22,7 +22,7 @@ namespace Gamejam2026
             if (done) return;
             if (player.Held == null || player.Held.isCandle)
             {
-                player.Tell("Necesitas la manivela. Deja la vela con Q / X.");
+                player.Tell("Necesitas la manivela. Deja la vela con " + DemoPlayerInput.DropLabel(player.playerIndex) + ".");
                 return;
             }
             game.Activate(this, player);

@@ -4,7 +4,6 @@ using Gamejam2026;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 [InitializeOnLoad]
 public static class DemoCheck
@@ -19,7 +18,7 @@ public static class DemoCheck
 
     public static void Run()
     {
-        EditorSceneManager.OpenScene("Assets/Game/Scenes/Demo.unity");
+        EditorSceneManager.OpenScene("Assets/Game/00_Scenes/Demo.unity");
         SessionState.SetInt(Active, 1);
         EditorApplication.isPlaying = true;
     }
@@ -40,13 +39,12 @@ public static class DemoCheck
         {
             var game = UnityEngine.Object.FindFirstObjectByType<DemoGame>();
             Require(game != null, "partida presente");
-            if (Gamepad.all.Count == 0) InputSystem.AddDevice<Gamepad>();
             var player = game.players[0];
             Require(game.players.Length == 2 && game.mechanisms.Length == 3, "dos jugadores y tres mecanismos");
             Require(game.players[0].view.rect.width == 0.5f && game.players[1].view.rect.x == 0.5f, "pantalla dividida");
             Require(game.players.All(p => p.Held && p.Held.isCandle), "cada jugador empieza con vela");
             game.Begin();
-            Require(game.Playing, "iniciar con teclado y mando");
+            Require(game.Playing, "iniciar sin requerir mandos");
             if (phase == 1)
             {
                 game.mechanisms[0].Use(player);

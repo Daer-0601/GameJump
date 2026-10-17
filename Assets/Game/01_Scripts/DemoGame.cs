@@ -1,17 +1,18 @@
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using UnityEngine.SceneManagement;
 
 namespace Gamejam2026
 {
+    [DefaultExecutionOrder(-100)]
     public class DemoGame : MonoBehaviour
     {
         const int MaxName = 18;
         const string NameKey1 = "AOscuras.Name1";
         const string NameKey2 = "AOscuras.Name2";
-        const string Glyphs = " ABCDEFGHIJKLMNÑOPQRSTUVWXYZÁÉÍÓÚÜ0123456789-";
-        const string GameplayHelp = "En la expedición: WASD o stick izquierdo para moverse, mouse o stick derecho para mirar, E o A para usar, Q o X para soltar, Esc o Start para pausar.";
+        const string GameplayHelp = DemoPlayerInput.Help;
 
         public DemoPlayer[] players;
         public DemoMechanism[] mechanisms;
@@ -30,8 +31,8 @@ namespace Gamejam2026
         public float darknessPenalty = 0.3f;
         public float errorPenalty = 10f;
         public float successRelief = 9f;
-        public bool twoGamepads;
         public bool Playing => started && !paused && !finished;
+        public bool PlayerInputEnabled => Playing && Time.frameCount > inputResumeFrame;
         public float Danger { get; private set; }
         public string SequenceText => "ORDEN: " + mechanisms[order[0]].symbol + " > " + mechanisms[order[1]].symbol + " > " + mechanisms[order[2]].symbol;
         public float progress => completed / 3f;
@@ -43,6 +44,7 @@ namespace Gamejam2026
         bool finished;
         bool won;
         bool transitioning;
+        int inputResumeFrame;
         float elapsed;
         float nextDisturbance;
         float disturbanceUntil;
@@ -59,16 +61,14 @@ namespace Gamejam2026
         int hitCount;
         int pointerFrame = -1;
         bool keyboardEdit;
-        bool padEdit;
-        bool suppressPause;
         float axisTimerX;
         float axisTimerY;
         float backspaceTimer;
         MenuCommand command;
         Keyboard textKeyboard;
 
-        readonly Rect[] hits = new Rect[6];
-        readonly Rect[] visuals = new Rect[6];
+        readonly Rect[] hits = new Rect[4];
+        readonly Rect[] visuals = new Rect[4];
         Rect columnRect;
         Rect titleRect;
         Rect briefRect;
@@ -97,8 +97,6 @@ namespace Gamejam2026
 
         static class Memory
         {
-            public static bool RememberMode;
-            public static bool TwoGamepads;
             public static bool AutoStart;
         }
 
@@ -143,19 +141,19 @@ namespace Gamejam2026
 
         public void Begin()
         {
-            if (!HasRequiredPads() || transitioning) return;
+            if (transitioning) return;
             name1 = CleanName(name1, "Jugador 1");
             name2 = CleanName(name2, "Jugador 2");
             SaveNames();
-            RememberMode();
             StopEdit(false);
             started = true;
+            inputResumeFrame = Time.frameCount;
             LockPointer();
         }
 
         void LockPointer()
         {
-            bool capture = Playing && !twoGamepads;
+            bool capture = Playing;
             Cursor.lockState = capture ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !capture;
         }
@@ -167,9 +165,8 @@ namespace Gamejam2026
             if (!this) return;
 
             RefreshOverlay();
-            suppressPause = false;
             if (overlay >= 0) PollMenu();
-            else if (started && !finished && !suppressPause && (EscapeDown() || StartDown())) PauseNow();
+            else if (started && !finished && EscapeDown()) PauseNow();
 
             if (overlay == 2 && RDown()) Queue(MenuCommand.Retry);
             ExecuteCommand();
@@ -182,12 +179,6 @@ namespace Gamejam2026
         void Simulate()
         {
             if (!Playing) return;
-
-            if (Gamepad.all.Count < (twoGamepads ? 2 : 1))
-            {
-                PauseNow();
-                return;
-            }
 
             elapsed += Time.deltaTime;
             float rate = dangerPerSecond;
@@ -294,8 +285,8 @@ namespace Gamejam2026
 
         void Continue()
         {
-            if (!HasRequiredPads()) return;
             paused = false;
+            inputResumeFrame = Time.frameCount;
             Time.timeScale = 1f;
             LockPointer();
         }
@@ -304,7 +295,6 @@ namespace Gamejam2026
         {
             Memory.AutoStart = true;
             SaveNames();
-            RememberMode();
             Restart();
         }
 
@@ -312,24 +302,17 @@ namespace Gamejam2026
         {
             Memory.AutoStart = false;
             SaveNames();
-            RememberMode();
             Restart();
         }
 
         void QuitGame()
         {
             SaveNames();
-            RememberMode();
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else
             Application.Quit();
 #endif
-        }
-
-        bool HasRequiredPads()
-        {
-            return Gamepad.all.Count >= (twoGamepads ? 2 : 1);
         }
 
         string PlayerLabel(int index)
@@ -341,13 +324,6 @@ namespace Gamejam2026
         {
             name1 = Sanitize(PlayerPrefs.GetString(NameKey1, ""));
             name2 = Sanitize(PlayerPrefs.GetString(NameKey2, ""));
-            if (Memory.RememberMode) twoGamepads = Memory.TwoGamepads;
-        }
-
-        void RememberMode()
-        {
-            Memory.RememberMode = true;
-            Memory.TwoGamepads = twoGamepads;
         }
 
         void StoreNames()
@@ -392,7 +368,7 @@ namespace Gamejam2026
 
         static int ItemCount(int id)
         {
-            if (id == 0) return 6;
+            if (id == 0) return 4;
             if (id < 0) return 0;
             return 3;
         }
@@ -414,7 +390,7 @@ namespace Gamejam2026
             {
                 if (string.IsNullOrWhiteSpace(name1)) focusIndex = 0;
                 else if (string.IsNullOrWhiteSpace(name2)) focusIndex = 1;
-                else focusIndex = 4;
+                else focusIndex = 2;
             }
             else focusIndex = 0;
         }
@@ -445,9 +421,7 @@ namespace Gamejam2026
         {
             Keyboard keyboard = Keyboard.current;
             bool escape = EscapeDown();
-            bool start = StartDown();
-            bool editing = keyboardEdit || padEdit;
-            if (escape || start) suppressPause = true;
+            bool editing = keyboardEdit;
 
             if (keyboardEdit && keyboard != null && (keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed) && keyboard.vKey.wasPressedThisFrame)
             {
@@ -461,40 +435,8 @@ namespace Gamejam2026
                 if (overlay == 1)
                 {
                     focusIndex = 0;
-                    if (HasRequiredPads()) Queue(MenuCommand.Continue);
+                    Queue(MenuCommand.Continue);
                 }
-                return;
-            }
-
-            if (EastDown() && editing)
-            {
-                StopEdit(true);
-                return;
-            }
-
-            if (start)
-            {
-                if (editing) StopEdit(true);
-                if (overlay == 0)
-                {
-                    focusIndex = 4;
-                    if (HasRequiredPads()) Queue(MenuCommand.Begin);
-                }
-                else if (overlay == 1)
-                {
-                    focusIndex = 0;
-                    if (HasRequiredPads()) Queue(MenuCommand.Continue);
-                }
-                else ActivateFocused();
-                return;
-            }
-
-            if (SelectDown() && overlay == 0)
-            {
-                if (editing) StopEdit(true);
-                twoGamepads = !twoGamepads;
-                RememberMode();
-                focusIndex = twoGamepads ? 3 : 2;
                 return;
             }
 
@@ -512,21 +454,6 @@ namespace Gamejam2026
                 if (enter && NameSlot(focusIndex))
                 {
                     keyboardEdit = true;
-                    padEdit = false;
-                    caret = NameOf(focusIndex).Length;
-                    return;
-                }
-                ActivateFocused();
-                return;
-            }
-
-            if (SouthDown())
-            {
-                if (editing) { StopEdit(true); return; }
-                if (NameSlot(focusIndex))
-                {
-                    padEdit = true;
-                    keyboardEdit = false;
                     caret = NameOf(focusIndex).Length;
                     return;
                 }
@@ -552,12 +479,6 @@ namespace Gamejam2026
             PollBackspace();
             int vertical = ReadAxis(false);
             int horizontal = ReadAxis(true);
-            if (padEdit)
-            {
-                if (vertical != 0) CycleActive(vertical < 0 ? 1 : -1);
-                if (horizontal != 0) MoveCaret(horizontal);
-                return;
-            }
             if (keyboardEdit)
             {
                 if (horizontal != 0) MoveCaret(horizontal);
@@ -573,13 +494,10 @@ namespace Gamejam2026
 
         void ActivateFocused()
         {
-            if (SlotDisabled(focusIndex)) return;
             if (overlay == 0)
             {
-                if (focusIndex == 2) { twoGamepads = false; RememberMode(); }
-                else if (focusIndex == 3) { twoGamepads = true; RememberMode(); }
-                else if (focusIndex == 4) Queue(MenuCommand.Begin);
-                else if (focusIndex == 5) Queue(MenuCommand.Quit);
+                if (focusIndex == 2) Queue(MenuCommand.Begin);
+                else if (focusIndex == 3) Queue(MenuCommand.Quit);
             }
             else if (overlay == 1)
             {
@@ -606,13 +524,6 @@ namespace Gamejam2026
         bool NameSlot(int index)
         {
             return overlay == 0 && index >= 0 && index < 2;
-        }
-
-        bool SlotDisabled(int index)
-        {
-            if (overlay == 0 && index == 4) return !HasRequiredPads();
-            if (overlay == 1 && index == 0) return !HasRequiredPads();
-            return false;
         }
 
         string NameOf(int index)
@@ -679,51 +590,18 @@ namespace Gamejam2026
             caret = Mathf.Clamp(caret + direction, 0, value.Length);
         }
 
-        void CycleActive(int direction)
-        {
-            if (!NameSlot(focusIndex) || direction == 0) return;
-            string value = NameOf(focusIndex);
-            if (string.IsNullOrEmpty(value))
-            {
-                SetName(focusIndex, direction > 0 ? "A" : "Z");
-                caret = 0;
-                return;
-            }
-            if (caret >= value.Length)
-            {
-                if (value.Length >= MaxName) caret = value.Length - 1;
-                else
-                {
-                    SetName(focusIndex, value + (direction > 0 ? "A" : "Z"));
-                    caret = NameOf(focusIndex).Length - 1;
-                    return;
-                }
-            }
-            int index = Mathf.Clamp(caret, 0, value.Length - 1);
-            int glyph = Glyphs.IndexOf(char.ToUpperInvariant(value[index]));
-            if (glyph < 0) glyph = 1;
-            glyph = (glyph + direction) % Glyphs.Length;
-            if (glyph < 0) glyph += Glyphs.Length;
-            char[] chars = value.ToCharArray();
-            chars[index] = Glyphs[glyph];
-            caret = index;
-            SetName(focusIndex, new string(chars));
-        }
-
         void StopEdit(bool save)
         {
-            bool wasEditing = keyboardEdit || padEdit;
+            bool wasEditing = keyboardEdit;
             keyboardEdit = false;
-            padEdit = false;
             if (save && wasEditing) SaveNames();
         }
 
         void PollBackspace()
         {
             Keyboard keyboard = Keyboard.current;
-            bool keyHeld = (keyboardEdit || padEdit) && keyboard != null && keyboard.backspaceKey.isPressed;
-            bool padHeld = padEdit && AnyPad(pad => pad.buttonWest.isPressed);
-            if (!keyHeld && !padHeld)
+            bool keyHeld = keyboardEdit && keyboard != null && keyboard.backspaceKey.isPressed;
+            if (!keyHeld)
             {
                 backspaceTimer = 0f;
                 return;
@@ -746,21 +624,6 @@ namespace Gamejam2026
                 if (negative.isPressed) { direction = -1; held = true; }
                 if (positive.isPressed) { direction = 1; held = true; }
             }
-            foreach (Gamepad pad in Gamepad.all)
-            {
-                Vector2 stick = pad.leftStick.ReadValue();
-                if (horizontal)
-                {
-                    if (pad.dpad.left.isPressed || stick.x <= -0.75f) { direction = -1; held = true; }
-                    if (pad.dpad.right.isPressed || stick.x >= 0.75f) { direction = 1; held = true; }
-                }
-                else
-                {
-                    if (pad.dpad.up.isPressed || stick.y >= 0.75f) { direction = -1; held = true; }
-                    if (pad.dpad.down.isPressed || stick.y <= -0.75f) { direction = 1; held = true; }
-                }
-            }
-
             if (!held)
             {
                 if (horizontal) axisTimerX = 0f;
@@ -777,13 +640,6 @@ namespace Gamejam2026
             return direction;
         }
 
-        static bool AnyPad(Func<Gamepad, bool> test)
-        {
-            foreach (Gamepad pad in Gamepad.all)
-                if (test(pad)) return true;
-            return false;
-        }
-
         static bool EscapeDown()
         {
             return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
@@ -793,11 +649,6 @@ namespace Gamejam2026
         {
             return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
         }
-
-        static bool StartDown() => AnyPad(pad => pad.startButton.wasPressedThisFrame);
-        static bool SouthDown() => AnyPad(pad => pad.buttonSouth.wasPressedThisFrame);
-        static bool EastDown() => AnyPad(pad => pad.buttonEast.wasPressedThisFrame);
-        static bool SelectDown() => AnyPad(pad => pad.selectButton.wasPressedThisFrame);
 
         float GuiScale => Screen.height <= 0 ? 1f : Mathf.Max(0.55f, Screen.height / 900f);
 
@@ -850,7 +701,7 @@ namespace Gamejam2026
             y += 78f;
             briefRect = new Rect(x, y, columnW, 72f);
             y += 86f;
-            hitCount = 6;
+            hitCount = 4;
             for (int i = 0; i < 2; i++)
             {
                 hits[i] = new Rect(x, y, columnW, 68f);
@@ -858,11 +709,9 @@ namespace Gamejam2026
                 y += 80f;
             }
             y += 16f;
-            hits[2] = visuals[2] = new Rect(x, y + 20f, columnW, 40f);
-            hits[3] = visuals[3] = new Rect(x, hits[2].yMax + 6f, columnW, 40f);
-            hits[4] = visuals[4] = new Rect(x, hits[3].yMax + 16f, columnW, 48f);
-            hits[5] = visuals[5] = new Rect(x, hits[4].yMax + 8f, columnW, 48f);
-            statusRect = new Rect(x, hits[5].yMax + 12f, columnW, 48f);
+            hits[2] = visuals[2] = new Rect(x, y + 20f, columnW, 48f);
+            hits[3] = visuals[3] = new Rect(x, hits[2].yMax + 8f, columnW, 48f);
+            statusRect = new Rect(x, hits[3].yMax + 12f, columnW, 48f);
             float helpTop = statusRect.yMax + 2f;
             float helpBottom = height - height * 0.055f - 10f;
             helpRect = new Rect(x, helpTop, columnW, Mathf.Max(48f, helpBottom - helpTop));
@@ -906,8 +755,7 @@ namespace Gamejam2026
             focusIndex = hover;
             if (NameSlot(hover))
             {
-                if (keyboardEdit || padEdit) SaveNames();
-                padEdit = false;
+                if (keyboardEdit) SaveNames();
                 keyboardEdit = true;
                 caret = CaretFromMouse(visuals[hover], NameOf(hover), gui.x);
                 return;
@@ -959,12 +807,9 @@ namespace Gamejam2026
 
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
-            Label(new Rect(visuals[2].x, hits[2].y - 20f, visuals[2].width, 20f), "Entrada", captionStyle, Ash);
-            DrawChoice(hits[2], "Teclado, mouse y un mando", 2, false, true, !twoGamepads);
-            DrawChoice(hits[3], "Dos mandos", 3, false, true, twoGamepads);
-            DrawChoice(hits[4], HasRequiredPads() ? "INICIAR EXPEDICIÓN" : "INICIAR EXPEDICIÓN     NO DISPONIBLE", 4, SlotDisabled(4), false, false);
-            DrawChoice(hits[5], "SALIR", 5, false, false, false);
-            Label(statusRect, PadStatus(), smallStyle, Ash);
+            DrawChoice(hits[2], "INICIAR EXPEDICIÓN", 2, false, false, false);
+            DrawChoice(hits[3], "SALIR", 3, false, false, false);
+            Label(statusRect, "Dos jugadores en un teclado compartido.", smallStyle, Ash);
             Label(helpRect, HelpText(), smallStyle, Ash);
         }
 
@@ -978,10 +823,10 @@ namespace Gamejam2026
             Label(briefRect, body, bodyStyle, Idle);
             if (overlay == 1)
             {
-                DrawChoice(hits[0], HasRequiredPads() ? "CONTINUAR" : "CONTINUAR     NO DISPONIBLE", 0, SlotDisabled(0), false, false);
+                DrawChoice(hits[0], "CONTINUAR", 0, false, false, false);
                 DrawChoice(hits[1], "VOLVER AL MENÚ", 1, false, false, false);
                 DrawChoice(hits[2], "SALIR", 2, false, false, false);
-                Label(statusRect, HasRequiredPads() ? "La partida sigue detenida." : "CONTINUAR no está disponible hasta reconectar el mando.", smallStyle, Ash);
+                Label(statusRect, "La partida sigue detenida.", smallStyle, Ash);
             }
             else
             {
@@ -996,7 +841,7 @@ namespace Gamejam2026
         void DrawName(int index, string caption)
         {
             bool focused = focusIndex == index;
-            bool editing = focused && (keyboardEdit || padEdit);
+            bool editing = focused && keyboardEdit;
             bool over = hover == index && !focused;
             Rect box = visuals[index];
             Label(new Rect(box.x, hits[index].y, box.width, 20f), editing ? caption + "    editando" : caption, captionStyle, editing || focused ? Paper : Ash);
@@ -1060,7 +905,7 @@ namespace Gamejam2026
                 if (!string.IsNullOrEmpty(prompt))
                 {
                     Box(new Rect(left + 22f, height - 112f, half - 44f, 64f), new Color(0.015f, 0.014f, 0.012f, 0.9f));
-                    Label(new Rect(left + 36f, height - 102f, half - 72f, 48f), "[E / A]  " + prompt, hudStyle, Paper);
+                    Label(new Rect(left + 36f, height - 102f, half - 72f, 48f), "[" + DemoPlayerInput.UseLabel(players[i].playerIndex) + "]  " + prompt, hudStyle, Paper);
                 }
                 if (Time.unscaledTime < players[i].MessageUntil)
                 {
@@ -1073,7 +918,6 @@ namespace Gamejam2026
         string PauseBody()
         {
             string who = "Expedición de " + PlayerLabel(0) + " y " + PlayerLabel(1) + ".";
-            if (!HasRequiredPads()) return who + "\nFalta un mando. Reconecten para poder continuar.";
             return who + "\nLa expedición está detenida.";
         }
 
@@ -1084,30 +928,14 @@ namespace Gamejam2026
             return "El peligro llegó al límite y alcanzó a " + who + ". Pueden repartir la luz y la manivela de otra forma.";
         }
 
-        string PadStatus()
-        {
-            int need = twoGamepads ? 2 : 1;
-            int have = Gamepad.all.Count;
-            string line = "Mandos conectados: " + have + ".";
-            if (have < need)
-            {
-                return line + (need == 2
-                    ? " Este modo necesita dos mandos. INICIAR EXPEDICIÓN no está disponible."
-                    : " Este modo necesita un mando además del teclado. INICIAR EXPEDICIÓN no está disponible.");
-            }
-            return line + " La expedición puede empezar.";
-        }
-
         string HelpText()
         {
-            if (overlay == 0 && padEdit)
-                return "Editando con mando. Arriba y abajo cambian la letra. Izquierda y derecha mueven el cursor. X borra. A o Esc termina.\n" + GameplayHelp;
             if (overlay == 0 && keyboardEdit)
                 return "Escribiendo. Enter confirma el nombre. Esc sale del campo. Ctrl+V pega.\n" + GameplayHelp;
             if (overlay == 0)
-                return "Flechas, stick o ratón para elegir. Enter confirma. En un nombre, Enter escribe con teclado y A edita con mando. BACK cambia la entrada. Start inicia si hay mandos suficientes.\n" + GameplayHelp;
+                return "Flechas o Tab para elegir. Enter confirma o edita un nombre. También puedes usar el ratón.\n" + GameplayHelp;
             if (overlay == 1)
-                return "Esc, Start o Continuar reanudan si los mandos siguen conectados. Volver al menú abandona esta expedición.\n" + GameplayHelp;
+                return "Esc o Continuar reanudan. Volver al menú abandona esta expedición.\n" + GameplayHelp;
             return "R o Volver a intentar empieza otra expedición con los mismos nombres. Volver al menú regresa a los nombres.\n" + GameplayHelp;
         }
 

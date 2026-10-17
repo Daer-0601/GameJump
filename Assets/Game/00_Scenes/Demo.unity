@@ -2282,7 +2282,6 @@ MonoBehaviour:
   darknessPenalty: 0.3
   errorPenalty: 10
   successRelief: 9
-  twoGamepads: 0
 --- !u!4 &779294659
 Transform:
   m_ObjectHideFlags: 0

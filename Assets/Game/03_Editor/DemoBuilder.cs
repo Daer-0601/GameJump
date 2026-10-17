@@ -12,7 +12,7 @@ using Gamejam2026;
 
 public static class DemoBuilder
 {
-    const string ScenePath = "Assets/Game/Scenes/Demo.unity";
+    const string ScenePath = "Assets/Game/00_Scenes/Demo.unity";
     static Material stone;
     static Material iron;
     static Material wax;
@@ -22,7 +22,7 @@ public static class DemoBuilder
     [MenuItem("Gamejam/Crear escena de la demo")]
     public static void CreateScene()
     {
-        Directory.CreateDirectory("Assets/Game/Scenes");
+        Directory.CreateDirectory("Assets/Game/00_Scenes");
         Directory.CreateDirectory("Assets/Game/Materials");
         AssetDatabase.Refresh();
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
