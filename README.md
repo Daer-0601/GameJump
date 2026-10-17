@@ -1,11 +1,11 @@
 # gamejam2026
 
-Prototipo cooperativo local de terror para dos jugadores. Unity **6000.6.6f1**, plantilla **Universal 3D (URP)**, Input System. Este nombre es provisional.
+Prototipo cooperativo local de terror para dos jugadores. Unity **6000.5.6f1**, plantilla **Universal 3D (URP)**, Input System. Este nombre es provisional.
 
 ## Abrir y jugar
 
 1. Unity Hub → Add / Agregar proyecto desde disco → seleccionar esta carpeta.
-2. Abrir con 6000.6.6f1. Esperar la importación de paquetes.
+2. Abrir con 6000.5.6f1. Esperar la importación de paquetes.
 3. Abrir `Assets/Game/Scenes/Demo.unity` y pulsar Play.
 4. Conectar un mando para jugar con teclado y mouse + mando, o dos mandos y marcar ese modo en la pantalla inicial.
 5. Pulsar Empezar. En mando, Back cambia de modo y A inicia.
