@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -6,6 +7,12 @@ namespace Gamejam2026
 {
     public class DemoGame : MonoBehaviour
     {
+        const int MaxName = 18;
+        const string NameKey1 = "AOscuras.Name1";
+        const string NameKey2 = "AOscuras.Name2";
+        const string Glyphs = " ABCDEFGHIJKLMNÑOPQRSTUVWXYZÁÉÍÓÚÜ0123456789-";
+        const string GameplayHelp = "En la expedición: WASD o stick izquierdo para moverse, mouse o stick derecho para mirar, E o A para usar, Q o X para soltar, Esc o Start para pausar.";
+
         public DemoPlayer[] players;
         public DemoMechanism[] mechanisms;
         public CarryObject[] candles;
@@ -27,30 +34,94 @@ namespace Gamejam2026
         public bool Playing => started && !paused && !finished;
         public float Danger { get; private set; }
         public string SequenceText => "ORDEN: " + mechanisms[order[0]].symbol + " > " + mechanisms[order[1]].symbol + " > " + mechanisms[order[2]].symbol;
+        public float progress => completed / 3f;
+
         int[] order = { 0, 1, 2 };
         int completed;
         bool started;
         bool paused;
         bool finished;
         bool won;
+        bool transitioning;
         float elapsed;
         float nextDisturbance;
         float disturbanceUntil;
         float nextDangerAlarm;
         float[] lightLevels;
         AudioSource sfxSource;
+
+        string name1 = "";
+        string name2 = "";
+        int overlay = -2;
+        int focusIndex;
+        int hover = -1;
+        int caret;
+        int hitCount;
+        int pointerFrame = -1;
+        bool keyboardEdit;
+        bool padEdit;
+        bool suppressPause;
+        float axisTimerX;
+        float axisTimerY;
+        float backspaceTimer;
+        MenuCommand command;
+        Keyboard textKeyboard;
+
+        readonly Rect[] hits = new Rect[6];
+        readonly Rect[] visuals = new Rect[6];
+        Rect columnRect;
+        Rect titleRect;
+        Rect briefRect;
+        Rect statusRect;
+        Rect helpRect;
+
         GUIStyle titleStyle;
-        GUIStyle textStyle;
+        GUIStyle glyphStyle;
+        GUIStyle bodyStyle;
+        GUIStyle captionStyle;
+        GUIStyle optionStyle;
+        GUIStyle fieldStyle;
         GUIStyle smallStyle;
-        Texture2D pixel;
-        public float progress => completed / 3f;
+        GUIStyle hudStyle;
+        GUIStyle hudSmallStyle;
+        bool stylesReady;
+        Font serif;
+        Texture2D grain;
+        Texture2D vignette;
+
+        static readonly Color Paper = new Color(0.86f, 0.82f, 0.74f, 1f);
+        static readonly Color Idle = new Color(0.72f, 0.68f, 0.60f, 1f);
+        static readonly Color Ash = new Color(0.58f, 0.54f, 0.48f, 1f);
+        static readonly Color DisabledInk = new Color(0.46f, 0.44f, 0.40f, 1f);
+        static readonly Color Wash = new Color(0.012f, 0.011f, 0.01f, 0.9f);
+
+        static class Memory
+        {
+            public static bool RememberMode;
+            public static bool TwoGamepads;
+            public static bool AutoStart;
+        }
+
+        enum MenuCommand { None, Begin, Continue, Retry, MainMenu, Quit }
+
+        void OnEnable()
+        {
+            BindTextKeyboard();
+        }
+
+        void OnDisable()
+        {
+            if (textKeyboard != null) textKeyboard.onTextInput -= OnNameCharacter;
+            textKeyboard = null;
+        }
 
         void Start()
         {
             Time.timeScale = 1f;
+            LoadSession();
             for (int i = order.Length - 1; i > 0; i--)
             {
-                int j = Random.Range(0, i + 1);
+                int j = UnityEngine.Random.Range(0, i + 1);
                 (order[i], order[j]) = (order[j], order[i]);
             }
             lightLevels = new float[atmosphereLights.Length];
@@ -64,12 +135,20 @@ namespace Gamejam2026
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             if (ambience) ambience.Play();
+
+            bool pendingStart = Memory.AutoStart;
+            Memory.AutoStart = false;
+            if (pendingStart) Begin();
         }
 
         public void Begin()
         {
-            int requiredPads = twoGamepads ? 2 : 1;
-            if (Gamepad.all.Count < requiredPads) return;
+            if (!HasRequiredPads() || transitioning) return;
+            name1 = CleanName(name1, "Jugador 1");
+            name2 = CleanName(name2, "Jugador 2");
+            SaveNames();
+            RememberMode();
+            StopEdit(false);
             started = true;
             LockPointer();
         }
@@ -83,36 +162,30 @@ namespace Gamejam2026
 
         void Update()
         {
-            if (!started)
-            {
-                foreach (var pad in Gamepad.all)
-                {
-                    if (pad.selectButton.wasPressedThisFrame) twoGamepads = !twoGamepads;
-                    if (pad.buttonSouth.wasPressedThisFrame) Begin();
-                }
-            }
-            else if (finished)
-            {
-                foreach (var pad in Gamepad.all)
-                    if (pad.buttonSouth.wasPressedThisFrame) Restart();
-            }
-            bool toggle = Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
-            foreach (var pad in Gamepad.all) toggle |= pad.startButton.wasPressedThisFrame;
-            if (toggle && started && !finished)
-            {
-                paused = !paused;
-                Time.timeScale = paused ? 0f : 1f;
-                LockPointer();
-            }
-            if (finished && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) Restart();
+            BindTextKeyboard();
+            ExecuteCommand();
+            if (!this) return;
+
+            RefreshOverlay();
+            suppressPause = false;
+            if (overlay >= 0) PollMenu();
+            else if (started && !finished && !suppressPause && (EscapeDown() || StartDown())) PauseNow();
+
+            if (overlay == 2 && RDown()) Queue(MenuCommand.Retry);
+            ExecuteCommand();
+            if (!this) return;
+
+            RefreshOverlay();
+            if (overlay < 0) Simulate();
+        }
+
+        void Simulate()
+        {
             if (!Playing) return;
 
-            // pausa si se desconecta un mando
             if (Gamepad.all.Count < (twoGamepads ? 2 : 1))
             {
-                paused = true;
-                Time.timeScale = 0f;
-                LockPointer();
+                PauseNow();
                 return;
             }
 
@@ -139,7 +212,7 @@ namespace Gamejam2026
             if (elapsed >= nextDisturbance)
             {
                 disturbanceUntil = elapsed + 1.4f;
-                nextDisturbance = elapsed + Random.Range(14f, 24f) * Mathf.Lerp(1f, 0.6f, Danger / 100f);
+                nextDisturbance = elapsed + UnityEngine.Random.Range(14f, 24f) * Mathf.Lerp(1f, 0.6f, Danger / 100f);
             }
             for (int i = 0; i < atmosphereLights.Length; i++)
             {
@@ -192,95 +265,15 @@ namespace Gamejam2026
 
         void OnApplicationFocus(bool focus)
         {
-            if (!focus && Playing)
-            {
-                paused = true;
-                Time.timeScale = 0f;
-                LockPointer();
-            }
+            if (!focus && Playing) PauseNow();
         }
 
         public void Restart()
         {
+            if (transitioning) return;
+            transitioning = true;
             Time.timeScale = 1f;
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        }
-
-        void Styles()
-        {
-            if (textStyle != null) return;
-            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 38, fontStyle = FontStyle.Bold, wordWrap = true };
-            titleStyle.normal.textColor = new Color(0.9f, 0.82f, 0.65f);
-            textStyle = new GUIStyle(GUI.skin.label) { fontSize = 19, wordWrap = true };
-            smallStyle = new GUIStyle(textStyle) { fontSize = 15 };
-            pixel = Texture2D.whiteTexture;
-        }
-
-        void Box(Rect rect, Color color)
-        {
-            GUI.color = color;
-            GUI.DrawTexture(rect, pixel);
-            GUI.color = Color.white;
-        }
-
-        void OnGUI()
-        {
-            Styles();
-            float scale = Mathf.Max(0.5f, Screen.height / 900f);
-            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
-            float width = Screen.width / scale;
-            float height = Screen.height / scale;
-            if (!started || paused || finished)
-            {
-                Box(new Rect(0, 0, width, height), new Color(0.015f, 0.02f, 0.025f, 0.94f));
-                GUILayout.BeginArea(new Rect(width / 2f - 340f, height / 2f - 260f, 680f, 550f));
-                GUILayout.Label(finished ? (won ? "INCIDENTE NEUTRALIZADO" : "LA OSCURIDAD LOS ALCANZO") : (paused ? "PAUSA" : "GAMEJAM 2026"), titleStyle);
-                GUILayout.Space(14);
-                if (!started)
-                {
-                    GUILayout.Label("Encuentren la inscripcion. Usen la manivela para activar los tres mecanismos en el orden indicado.\n\nUna mano: llevar la manivela exige dejar la vela. Organicen la luz y los recorridos juntos.", textStyle);
-                    GUILayout.Space(18);
-                    twoGamepads = GUILayout.Toggle(twoGamepads, " Dos mandos (desmarcado: teclado y mouse + un mando)");
-                    GUILayout.Label("Mandos conectados: " + Gamepad.all.Count + " | BACK cambia modo, A empieza", smallStyle);
-                    GUI.enabled = Gamepad.all.Count >= (twoGamepads ? 2 : 1);
-                    if (GUILayout.Button("EMPEZAR", GUILayout.Height(44))) Begin();
-                    GUI.enabled = true;
-                }
-                else if (paused)
-                {
-                    GUILayout.Label("Reconecten los mandos si hace falta.\nLa partida esta detenida.", textStyle);
-                    GUI.enabled = Gamepad.all.Count >= (twoGamepads ? 2 : 1);
-                    if (GUILayout.Button("CONTINUAR", GUILayout.Height(44))) { paused = false; Time.timeScale = 1f; LockPointer(); }
-                    GUI.enabled = true;
-                }
-                else
-                {
-                    GUILayout.Label(won ? "Se coordinaron y cerraron el incidente." : "El tiempo y los errores dejaron crecer el peligro. Prueben otra distribucion de tareas.", textStyle);
-                    if (GUILayout.Button("VOLVER A INTENTAR", GUILayout.Height(44))) Restart();
-                }
-                GUILayout.Space(14);
-                GUILayout.Label("TECLADO: WASD mover | mouse mirar | E interactuar | Q soltar\nMANDO: sticks mover/mirar | A interactuar | X soltar\nESC / START: pausa", smallStyle);
-                GUILayout.EndArea();
-                return;
-            }
-
-            Box(new Rect(width / 2f - 2f, 0, 4f, height), Color.black);
-            for (int i = 0; i < players.Length; i++)
-            {
-                float left = i * width / 2f;
-                Box(new Rect(left + 16, 16, width / 2f - 32, 75), new Color(0.02f, 0.025f, 0.03f, 0.85f));
-                GUI.Label(new Rect(left + 30, 24, 450, 28), "JUGADOR " + (i + 1) + "  /  " + (players[i].Held ? players[i].Held.displayName : "manos libres"), textStyle);
-                GUI.Label(new Rect(left + 30, 54, 450, 24), completed + "/3 mecanismos  |  peligro " + Mathf.CeilToInt(Danger) + "%", smallStyle);
-                Box(new Rect(left + 20, height - 16, (width / 2f - 40) * Danger / 100f, 5), new Color(0.65f, 0.2f, 0.12f));
-                GUI.Label(new Rect(left + width / 4f - 4, height / 2f - 14, 20, 30), "+", textStyle);
-                string prompt = players[i].Hint;
-                if (!string.IsNullOrEmpty(prompt)) GUI.Label(new Rect(left + 25, height - 100, width / 2f - 50, 55), "[E / A] " + prompt, textStyle);
-                if (Time.unscaledTime < players[i].MessageUntil)
-                {
-                    Box(new Rect(left + 22, 106, width / 2f - 44, 90), new Color(0.02f, 0.025f, 0.03f, 0.9f));
-                    GUI.Label(new Rect(left + 35, 118, width / 2f - 70, 75), players[i].Message, textStyle);
-                }
-            }
         }
 
         void OnDestroy()
@@ -288,6 +281,1022 @@ namespace Gamejam2026
             Time.timeScale = 1f;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+            if (grain) Destroy(grain);
+            if (vignette) Destroy(vignette);
+        }
+
+        void PauseNow()
+        {
+            paused = true;
+            Time.timeScale = 0f;
+            LockPointer();
+        }
+
+        void Continue()
+        {
+            if (!HasRequiredPads()) return;
+            paused = false;
+            Time.timeScale = 1f;
+            LockPointer();
+        }
+
+        void Retry()
+        {
+            Memory.AutoStart = true;
+            SaveNames();
+            RememberMode();
+            Restart();
+        }
+
+        void ReturnToMenu()
+        {
+            Memory.AutoStart = false;
+            SaveNames();
+            RememberMode();
+            Restart();
+        }
+
+        void QuitGame()
+        {
+            SaveNames();
+            RememberMode();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        bool HasRequiredPads()
+        {
+            return Gamepad.all.Count >= (twoGamepads ? 2 : 1);
+        }
+
+        string PlayerLabel(int index)
+        {
+            return CleanName(index == 0 ? name1 : name2, "Jugador " + (index + 1));
+        }
+
+        void LoadSession()
+        {
+            name1 = Sanitize(PlayerPrefs.GetString(NameKey1, ""));
+            name2 = Sanitize(PlayerPrefs.GetString(NameKey2, ""));
+            if (Memory.RememberMode) twoGamepads = Memory.TwoGamepads;
+        }
+
+        void RememberMode()
+        {
+            Memory.RememberMode = true;
+            Memory.TwoGamepads = twoGamepads;
+        }
+
+        void StoreNames()
+        {
+            PlayerPrefs.SetString(NameKey1, name1 ?? "");
+            PlayerPrefs.SetString(NameKey2, name2 ?? "");
+        }
+
+        void SaveNames()
+        {
+            StoreNames();
+            PlayerPrefs.Save();
+        }
+
+        void Queue(MenuCommand value)
+        {
+            if (transitioning || value == MenuCommand.None) return;
+            command = value;
+        }
+
+        void ExecuteCommand()
+        {
+            MenuCommand next = command;
+            command = MenuCommand.None;
+            switch (next)
+            {
+                case MenuCommand.Begin: Begin(); break;
+                case MenuCommand.Continue: Continue(); break;
+                case MenuCommand.Retry: Retry(); break;
+                case MenuCommand.MainMenu: ReturnToMenu(); break;
+                case MenuCommand.Quit: QuitGame(); break;
+            }
+        }
+
+        int CurrentOverlay()
+        {
+            if (!started) return 0;
+            if (finished) return 2;
+            if (paused) return 1;
+            return -1;
+        }
+
+        static int ItemCount(int id)
+        {
+            if (id == 0) return 6;
+            if (id < 0) return 0;
+            return 3;
+        }
+
+        void RefreshOverlay()
+        {
+            int next = CurrentOverlay();
+            if (next == overlay)
+            {
+                int count = ItemCount(next);
+                if (count > 0) focusIndex = Mathf.Clamp(focusIndex, 0, count - 1);
+                return;
+            }
+
+            overlay = next;
+            StopEdit(true);
+            hover = -1;
+            if (next == 0)
+            {
+                if (string.IsNullOrWhiteSpace(name1)) focusIndex = 0;
+                else if (string.IsNullOrWhiteSpace(name2)) focusIndex = 1;
+                else focusIndex = 4;
+            }
+            else focusIndex = 0;
+        }
+
+        void BindTextKeyboard()
+        {
+            Keyboard current = Keyboard.current;
+            if (textKeyboard == current) return;
+            if (textKeyboard != null) textKeyboard.onTextInput -= OnNameCharacter;
+            textKeyboard = current;
+            if (textKeyboard != null) textKeyboard.onTextInput += OnNameCharacter;
+        }
+
+        void OnNameCharacter(char character)
+        {
+            if (!keyboardEdit || overlay != 0 || focusIndex > 1 || char.IsControl(character)) return;
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard != null)
+            {
+                bool ctrl = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
+                bool alt = keyboard.leftAltKey.isPressed || keyboard.rightAltKey.isPressed;
+                if (ctrl && !alt) return;
+            }
+            Insert(character);
+        }
+
+        void PollMenu()
+        {
+            Keyboard keyboard = Keyboard.current;
+            bool escape = EscapeDown();
+            bool start = StartDown();
+            bool editing = keyboardEdit || padEdit;
+            if (escape || start) suppressPause = true;
+
+            if (keyboardEdit && keyboard != null && (keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed) && keyboard.vKey.wasPressedThisFrame)
+            {
+                Paste();
+                return;
+            }
+
+            if (escape)
+            {
+                if (editing) { StopEdit(true); return; }
+                if (overlay == 1)
+                {
+                    focusIndex = 0;
+                    if (HasRequiredPads()) Queue(MenuCommand.Continue);
+                }
+                return;
+            }
+
+            if (EastDown() && editing)
+            {
+                StopEdit(true);
+                return;
+            }
+
+            if (start)
+            {
+                if (editing) StopEdit(true);
+                if (overlay == 0)
+                {
+                    focusIndex = 4;
+                    if (HasRequiredPads()) Queue(MenuCommand.Begin);
+                }
+                else if (overlay == 1)
+                {
+                    focusIndex = 0;
+                    if (HasRequiredPads()) Queue(MenuCommand.Continue);
+                }
+                else ActivateFocused();
+                return;
+            }
+
+            if (SelectDown() && overlay == 0)
+            {
+                if (editing) StopEdit(true);
+                twoGamepads = !twoGamepads;
+                RememberMode();
+                focusIndex = twoGamepads ? 3 : 2;
+                return;
+            }
+
+            bool enter = keyboard != null && (keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame);
+            bool space = keyboard != null && keyboard.spaceKey.wasPressedThisFrame && !editing;
+            if (enter || space)
+            {
+                if (editing)
+                {
+                    bool advance = keyboardEdit && NameSlot(focusIndex);
+                    StopEdit(true);
+                    if (advance) MoveFocus(1);
+                    return;
+                }
+                if (enter && NameSlot(focusIndex))
+                {
+                    keyboardEdit = true;
+                    padEdit = false;
+                    caret = NameOf(focusIndex).Length;
+                    return;
+                }
+                ActivateFocused();
+                return;
+            }
+
+            if (SouthDown())
+            {
+                if (editing) { StopEdit(true); return; }
+                if (NameSlot(focusIndex))
+                {
+                    padEdit = true;
+                    keyboardEdit = false;
+                    caret = NameOf(focusIndex).Length;
+                    return;
+                }
+                ActivateFocused();
+                return;
+            }
+
+            if (keyboard != null && keyboard.tabKey.wasPressedThisFrame)
+            {
+                bool backward = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+                StopEdit(true);
+                MoveFocus(backward ? -1 : 1);
+                return;
+            }
+
+            if (keyboardEdit && keyboard != null)
+            {
+                if (keyboard.homeKey.wasPressedThisFrame) caret = 0;
+                if (keyboard.endKey.wasPressedThisFrame) caret = NameOf(focusIndex).Length;
+                if (keyboard.deleteKey.wasPressedThisFrame) DeleteForward();
+            }
+
+            PollBackspace();
+            int vertical = ReadAxis(false);
+            int horizontal = ReadAxis(true);
+            if (padEdit)
+            {
+                if (vertical != 0) CycleActive(vertical < 0 ? 1 : -1);
+                if (horizontal != 0) MoveCaret(horizontal);
+                return;
+            }
+            if (keyboardEdit)
+            {
+                if (horizontal != 0) MoveCaret(horizontal);
+                if (vertical != 0)
+                {
+                    StopEdit(true);
+                    MoveFocus(vertical);
+                }
+                return;
+            }
+            if (vertical != 0) MoveFocus(vertical);
+        }
+
+        void ActivateFocused()
+        {
+            if (SlotDisabled(focusIndex)) return;
+            if (overlay == 0)
+            {
+                if (focusIndex == 2) { twoGamepads = false; RememberMode(); }
+                else if (focusIndex == 3) { twoGamepads = true; RememberMode(); }
+                else if (focusIndex == 4) Queue(MenuCommand.Begin);
+                else if (focusIndex == 5) Queue(MenuCommand.Quit);
+            }
+            else if (overlay == 1)
+            {
+                if (focusIndex == 0) Queue(MenuCommand.Continue);
+                else if (focusIndex == 1) Queue(MenuCommand.MainMenu);
+                else Queue(MenuCommand.Quit);
+            }
+            else if (overlay == 2)
+            {
+                if (focusIndex == 0) Queue(MenuCommand.Retry);
+                else if (focusIndex == 1) Queue(MenuCommand.MainMenu);
+                else Queue(MenuCommand.Quit);
+            }
+        }
+
+        void MoveFocus(int direction)
+        {
+            int count = ItemCount(overlay);
+            if (count == 0 || direction == 0) return;
+            focusIndex = (focusIndex + direction) % count;
+            if (focusIndex < 0) focusIndex += count;
+        }
+
+        bool NameSlot(int index)
+        {
+            return overlay == 0 && index >= 0 && index < 2;
+        }
+
+        bool SlotDisabled(int index)
+        {
+            if (overlay == 0 && index == 4) return !HasRequiredPads();
+            if (overlay == 1 && index == 0) return !HasRequiredPads();
+            return false;
+        }
+
+        string NameOf(int index)
+        {
+            return index == 0 ? name1 ?? "" : name2 ?? "";
+        }
+
+        void SetName(int index, string value)
+        {
+            value = Sanitize(value);
+            if (index == 0) name1 = value;
+            else name2 = value;
+            caret = Mathf.Clamp(caret, 0, value.Length);
+            StoreNames();
+        }
+
+        void Insert(char character)
+        {
+            string value = NameOf(focusIndex);
+            caret = Mathf.Clamp(caret, 0, value.Length);
+            if (value.Length >= MaxName) return;
+            SetName(focusIndex, value.Insert(caret, character.ToString()));
+            caret++;
+            caret = Mathf.Clamp(caret, 0, NameOf(focusIndex).Length);
+        }
+
+        void Paste()
+        {
+            if (!keyboardEdit || !NameSlot(focusIndex)) return;
+            string clip = Sanitize(GUIUtility.systemCopyBuffer ?? "");
+            if (clip.Length == 0) return;
+            string value = NameOf(focusIndex);
+            caret = Mathf.Clamp(caret, 0, value.Length);
+            int room = MaxName - value.Length;
+            if (room <= 0) return;
+            if (clip.Length > room) clip = clip.Substring(0, room);
+            SetName(focusIndex, value.Insert(caret, clip));
+            caret += clip.Length;
+            caret = Mathf.Clamp(caret, 0, NameOf(focusIndex).Length);
+        }
+
+        void BackspaceActive()
+        {
+            if (!NameSlot(focusIndex)) return;
+            string value = NameOf(focusIndex);
+            caret = Mathf.Clamp(caret, 0, value.Length);
+            if (caret == 0 || value.Length == 0) return;
+            caret--;
+            SetName(focusIndex, value.Remove(caret, 1));
+        }
+
+        void DeleteForward()
+        {
+            if (!NameSlot(focusIndex)) return;
+            string value = NameOf(focusIndex);
+            caret = Mathf.Clamp(caret, 0, value.Length);
+            if (caret >= value.Length) return;
+            SetName(focusIndex, value.Remove(caret, 1));
+        }
+
+        void MoveCaret(int direction)
+        {
+            string value = NameOf(focusIndex);
+            caret = Mathf.Clamp(caret + direction, 0, value.Length);
+        }
+
+        void CycleActive(int direction)
+        {
+            if (!NameSlot(focusIndex) || direction == 0) return;
+            string value = NameOf(focusIndex);
+            if (string.IsNullOrEmpty(value))
+            {
+                SetName(focusIndex, direction > 0 ? "A" : "Z");
+                caret = 0;
+                return;
+            }
+            if (caret >= value.Length)
+            {
+                if (value.Length >= MaxName) caret = value.Length - 1;
+                else
+                {
+                    SetName(focusIndex, value + (direction > 0 ? "A" : "Z"));
+                    caret = NameOf(focusIndex).Length - 1;
+                    return;
+                }
+            }
+            int index = Mathf.Clamp(caret, 0, value.Length - 1);
+            int glyph = Glyphs.IndexOf(char.ToUpperInvariant(value[index]));
+            if (glyph < 0) glyph = 1;
+            glyph = (glyph + direction) % Glyphs.Length;
+            if (glyph < 0) glyph += Glyphs.Length;
+            char[] chars = value.ToCharArray();
+            chars[index] = Glyphs[glyph];
+            caret = index;
+            SetName(focusIndex, new string(chars));
+        }
+
+        void StopEdit(bool save)
+        {
+            bool wasEditing = keyboardEdit || padEdit;
+            keyboardEdit = false;
+            padEdit = false;
+            if (save && wasEditing) SaveNames();
+        }
+
+        void PollBackspace()
+        {
+            Keyboard keyboard = Keyboard.current;
+            bool keyHeld = (keyboardEdit || padEdit) && keyboard != null && keyboard.backspaceKey.isPressed;
+            bool padHeld = padEdit && AnyPad(pad => pad.buttonWest.isPressed);
+            if (!keyHeld && !padHeld)
+            {
+                backspaceTimer = 0f;
+                return;
+            }
+            if (Time.unscaledTime < backspaceTimer) return;
+            float delay = backspaceTimer == 0f ? 0.32f : 0.045f;
+            backspaceTimer = Time.unscaledTime + delay;
+            BackspaceActive();
+        }
+
+        int ReadAxis(bool horizontal)
+        {
+            int direction = 0;
+            bool held = false;
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard != null)
+            {
+                KeyControl negative = horizontal ? keyboard.leftArrowKey : keyboard.upArrowKey;
+                KeyControl positive = horizontal ? keyboard.rightArrowKey : keyboard.downArrowKey;
+                if (negative.isPressed) { direction = -1; held = true; }
+                if (positive.isPressed) { direction = 1; held = true; }
+            }
+            foreach (Gamepad pad in Gamepad.all)
+            {
+                Vector2 stick = pad.leftStick.ReadValue();
+                if (horizontal)
+                {
+                    if (pad.dpad.left.isPressed || stick.x <= -0.75f) { direction = -1; held = true; }
+                    if (pad.dpad.right.isPressed || stick.x >= 0.75f) { direction = 1; held = true; }
+                }
+                else
+                {
+                    if (pad.dpad.up.isPressed || stick.y >= 0.75f) { direction = -1; held = true; }
+                    if (pad.dpad.down.isPressed || stick.y <= -0.75f) { direction = 1; held = true; }
+                }
+            }
+
+            if (!held)
+            {
+                if (horizontal) axisTimerX = 0f;
+                else axisTimerY = 0f;
+                return 0;
+            }
+
+            float timer = horizontal ? axisTimerX : axisTimerY;
+            if (Time.unscaledTime < timer) return 0;
+            float repeat = timer == 0f ? 0.36f : 0.14f;
+            timer = Time.unscaledTime + repeat;
+            if (horizontal) axisTimerX = timer;
+            else axisTimerY = timer;
+            return direction;
+        }
+
+        static bool AnyPad(Func<Gamepad, bool> test)
+        {
+            foreach (Gamepad pad in Gamepad.all)
+                if (test(pad)) return true;
+            return false;
+        }
+
+        static bool EscapeDown()
+        {
+            return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+        }
+
+        static bool RDown()
+        {
+            return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
+        }
+
+        static bool StartDown() => AnyPad(pad => pad.startButton.wasPressedThisFrame);
+        static bool SouthDown() => AnyPad(pad => pad.buttonSouth.wasPressedThisFrame);
+        static bool EastDown() => AnyPad(pad => pad.buttonEast.wasPressedThisFrame);
+        static bool SelectDown() => AnyPad(pad => pad.selectButton.wasPressedThisFrame);
+
+        float GuiScale => Screen.height <= 0 ? 1f : Mathf.Max(0.55f, Screen.height / 900f);
+
+        Vector2 MouseGui(Vector2 screen)
+        {
+            float scale = GuiScale;
+            return new Vector2(screen.x / scale, (Screen.height - screen.y) / scale);
+        }
+
+        void OnGUI()
+        {
+            EnsureStyles();
+            RefreshOverlay();
+            float scale = GuiScale;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
+            try
+            {
+                float width = Screen.width / scale;
+                float height = Screen.height / scale;
+                if (overlay >= 0)
+                {
+                    LayoutOverlay(width, height);
+                    HandlePointer();
+                    DrawBackdrop(width, height);
+                    if (overlay == 0) DrawTitle();
+                    else DrawSimple();
+                }
+                else DrawHud(width, height);
+            }
+            finally
+            {
+                GUI.matrix = Matrix4x4.identity;
+                GUI.color = Color.white;
+            }
+        }
+
+        void LayoutOverlay(float width, float height)
+        {
+            float columnW = Mathf.Min(640f, width - 72f);
+            float x = (width - columnW) * 0.5f;
+            columnRect = new Rect(x, 0f, columnW, height);
+            if (overlay == 0) LayoutTitle(x, columnW, height);
+            else LayoutSimple(x, columnW, height);
+        }
+
+        void LayoutTitle(float x, float columnW, float height)
+        {
+            float y = Mathf.Max(height * 0.055f + 18f, 36f);
+            titleRect = new Rect(x, y, columnW, 68f);
+            y += 78f;
+            briefRect = new Rect(x, y, columnW, 72f);
+            y += 86f;
+            hitCount = 6;
+            for (int i = 0; i < 2; i++)
+            {
+                hits[i] = new Rect(x, y, columnW, 68f);
+                visuals[i] = new Rect(x + 16f, y + 22f, columnW - 16f, 46f);
+                y += 80f;
+            }
+            y += 16f;
+            hits[2] = visuals[2] = new Rect(x, y + 20f, columnW, 40f);
+            hits[3] = visuals[3] = new Rect(x, hits[2].yMax + 6f, columnW, 40f);
+            hits[4] = visuals[4] = new Rect(x, hits[3].yMax + 16f, columnW, 48f);
+            hits[5] = visuals[5] = new Rect(x, hits[4].yMax + 8f, columnW, 48f);
+            statusRect = new Rect(x, hits[5].yMax + 12f, columnW, 48f);
+            float helpTop = statusRect.yMax + 2f;
+            float helpBottom = height - height * 0.055f - 10f;
+            helpRect = new Rect(x, helpTop, columnW, Mathf.Max(48f, helpBottom - helpTop));
+        }
+
+        void LayoutSimple(float x, float columnW, float height)
+        {
+            const float block = 470f;
+            float y = Mathf.Max(height * 0.055f + 18f, (height - block) * 0.4f);
+            titleRect = new Rect(x, y, columnW, 72f);
+            y += 88f;
+            briefRect = new Rect(x, y, columnW, 78f);
+            y += 96f;
+            hitCount = 3;
+            for (int i = 0; i < 3; i++)
+            {
+                hits[i] = visuals[i] = new Rect(x, y, columnW, 48f);
+                y += 56f;
+            }
+            statusRect = new Rect(x, y + 4f, columnW, 36f);
+            helpRect = new Rect(x, y + 42f, columnW, 110f);
+        }
+
+        void HandlePointer()
+        {
+            hover = -1;
+            Mouse mouse = Mouse.current;
+            if (mouse == null || hitCount == 0) return;
+            Vector2 gui = MouseGui(mouse.position.ReadValue());
+            for (int i = 0; i < hitCount; i++)
+                if (hits[i].Contains(gui)) hover = i;
+
+            if (!mouse.leftButton.wasPressedThisFrame || pointerFrame == Time.frameCount) return;
+            pointerFrame = Time.frameCount;
+            if (hover < 0)
+            {
+                StopEdit(true);
+                return;
+            }
+
+            focusIndex = hover;
+            if (NameSlot(hover))
+            {
+                if (keyboardEdit || padEdit) SaveNames();
+                padEdit = false;
+                keyboardEdit = true;
+                caret = CaretFromMouse(visuals[hover], NameOf(hover), gui.x);
+                return;
+            }
+
+            StopEdit(true);
+            ActivateFocused();
+        }
+
+        int CaretFromMouse(Rect visual, string value, float mouseX)
+        {
+            if (string.IsNullOrEmpty(value)) return 0;
+            float local = mouseX - visual.x - 12f;
+            if (local <= 0f) return 0;
+            int best = 0;
+            for (int i = 1; i <= value.Length; i++)
+            {
+                float width = fieldStyle.CalcSize(new GUIContent(value.Substring(0, i))).x;
+                if (local >= width) best = i;
+                else break;
+            }
+            return best;
+        }
+
+        void DrawBackdrop(float width, float height)
+        {
+            Box(new Rect(0f, 0f, width, height), Wash);
+            if (vignette) GUI.DrawTexture(new Rect(0f, 0f, width, height), vignette, ScaleMode.StretchToFill, true);
+            if (grain)
+            {
+                Color previous = GUI.color;
+                GUI.color = new Color(1f, 1f, 1f, 0.16f);
+                float tilesX = Mathf.Max(1f, width / 180f);
+                float tilesY = Mathf.Max(1f, height / 180f);
+                GUI.DrawTextureWithTexCoords(new Rect(0f, 0f, width, height), grain, new Rect(0f, 0f, tilesX, tilesY));
+                GUI.color = previous;
+            }
+            Box(new Rect(columnRect.x - 40f, 0f, columnRect.width + 80f, height), new Color(0f, 0f, 0f, 0.5f));
+            float bar = height * 0.055f;
+            Box(new Rect(0f, 0f, width, bar), Color.black);
+            Box(new Rect(0f, height - bar, width, bar), Color.black);
+        }
+
+        void DrawTitle()
+        {
+            DrawTracked(titleRect, "A Oscuras", glyphStyle, 7f, Paper);
+            Rule(titleRect.center.x, titleRect.yMax + 2f, 168f);
+            Label(briefRect, "Encuentren la inscripción y activen los tres mecanismos en el orden indicado. Para llevar la manivela hay que dejar la vela.", bodyStyle, Ash);
+
+            DrawName(0, "Nombre del jugador 1");
+            DrawName(1, "Nombre del jugador 2");
+            Label(new Rect(visuals[2].x, hits[2].y - 20f, visuals[2].width, 20f), "Entrada", captionStyle, Ash);
+            DrawChoice(hits[2], "Teclado, mouse y un mando", 2, false, true, !twoGamepads);
+            DrawChoice(hits[3], "Dos mandos", 3, false, true, twoGamepads);
+            DrawChoice(hits[4], HasRequiredPads() ? "INICIAR EXPEDICIÓN" : "INICIAR EXPEDICIÓN     NO DISPONIBLE", 4, SlotDisabled(4), false, false);
+            DrawChoice(hits[5], "SALIR", 5, false, false, false);
+            Label(statusRect, PadStatus(), smallStyle, Ash);
+            Label(helpRect, HelpText(), smallStyle, Ash);
+        }
+
+        void DrawSimple()
+        {
+            string headline = overlay == 1 ? "Pausa" : (won ? "Incidente neutralizado" : "La oscuridad los alcanzó");
+            string body = overlay == 1 ? PauseBody() : ResultBody();
+            if (overlay == 1) DrawTracked(titleRect, headline, glyphStyle, 8f, Paper);
+            else Label(titleRect, headline, titleStyle, Paper);
+            Rule(titleRect.center.x, titleRect.yMax + 4f, overlay == 1 ? 96f : 220f);
+            Label(briefRect, body, bodyStyle, Idle);
+            if (overlay == 1)
+            {
+                DrawChoice(hits[0], HasRequiredPads() ? "CONTINUAR" : "CONTINUAR     NO DISPONIBLE", 0, SlotDisabled(0), false, false);
+                DrawChoice(hits[1], "VOLVER AL MENÚ", 1, false, false, false);
+                DrawChoice(hits[2], "SALIR", 2, false, false, false);
+                Label(statusRect, HasRequiredPads() ? "La partida sigue detenida." : "CONTINUAR no está disponible hasta reconectar el mando.", smallStyle, Ash);
+            }
+            else
+            {
+                DrawChoice(hits[0], "VOLVER A INTENTAR", 0, false, false, false);
+                DrawChoice(hits[1], "VOLVER AL MENÚ", 1, false, false, false);
+                DrawChoice(hits[2], "SALIR", 2, false, false, false);
+                Label(statusRect, "Reintentar conserva los nombres y empieza de nuevo.", smallStyle, Ash);
+            }
+            Label(helpRect, HelpText(), smallStyle, Ash);
+        }
+
+        void DrawName(int index, string caption)
+        {
+            bool focused = focusIndex == index;
+            bool editing = focused && (keyboardEdit || padEdit);
+            bool over = hover == index && !focused;
+            Rect box = visuals[index];
+            Label(new Rect(box.x, hits[index].y, box.width, 20f), editing ? caption + "    editando" : caption, captionStyle, editing || focused ? Paper : Ash);
+            Color border = editing || focused ? Paper : (over ? Idle : new Color(0.30f, 0.28f, 0.25f, 1f));
+            Frame(box, border, new Color(0.04f, 0.04f, 0.035f, 0.96f));
+            string value = NameOf(index);
+            Rect text = new Rect(box.x + 12f, box.y, box.width - 24f, box.height);
+            if (string.IsNullOrWhiteSpace(value) && !editing)
+                Label(text, "Sin nombre", fieldStyle, DisabledInk);
+            else
+                Label(text, value, fieldStyle, Paper);
+            if (!editing) return;
+
+            caret = Mathf.Clamp(caret, 0, value.Length);
+            string before = value.Substring(0, caret);
+            float caretX = text.x + fieldStyle.CalcSize(new GUIContent(before)).x;
+            Box(new Rect(caretX, box.y + 10f, 2f, box.height - 20f), Paper);
+        }
+
+        void DrawChoice(Rect hit, string text, int index, bool disabled, bool marked, bool markOn)
+        {
+            bool focused = focusIndex == index;
+            bool over = hover == index && !focused;
+            Color ink = disabled ? DisabledInk : focused ? Paper : over ? Idle : Ash;
+            if (focused) Box(new Rect(hit.x, hit.y + hit.height * 0.5f - 1f, 11f, 2f), ink);
+            float textX = hit.x + 18f;
+            if (marked)
+            {
+                var mark = new Rect(hit.x + 20f, hit.y + hit.height * 0.5f - 6f, 12f, 12f);
+                if (markOn) Box(mark, ink);
+                else Stroke(mark, ink);
+                textX = hit.x + 42f;
+            }
+            Label(new Rect(textX, hit.y, hit.width - (textX - hit.x) - 8f, hit.height), text, optionStyle, ink);
+        }
+
+        void DrawHud(float width, float height)
+        {
+            Box(new Rect(width * 0.5f - 1f, 0f, 2f, height), Color.black);
+            for (int i = 0; i < players.Length; i++)
+            {
+                float left = i * width * 0.5f;
+                float half = width * 0.5f;
+                Box(new Rect(left + 16f, 16f, half - 32f, 78f), new Color(0.015f, 0.014f, 0.012f, 0.9f));
+                Box(new Rect(left + 16f, 16f, 2f, 78f), Paper);
+                Label(new Rect(left + 28f, 22f, 28f, 26f), (i + 1).ToString(), hudStyle, Ash);
+                string held = players[i].Held ? players[i].Held.displayName : "manos libres";
+                Label(new Rect(left + 56f, 22f, half - 84f, 26f), PlayerLabel(i) + "   /   " + held, hudStyle, Paper);
+                string danger = completed + "/3 mecanismos    peligro " + Mathf.CeilToInt(Danger) + "%";
+                if (Danger >= dangerAlarmThreshold) danger += "    alto";
+                Label(new Rect(left + 56f, 52f, half - 84f, 24f), danger, hudSmallStyle, Ash);
+                Box(new Rect(left + 20f, height - 18f, half - 40f, 4f), new Color(0.16f, 0.15f, 0.13f, 0.9f));
+                Box(new Rect(left + 20f, height - 18f, (half - 40f) * Danger / 100f, 4f), Paper);
+
+                float centerX = left + half * 0.5f;
+                float centerY = height * 0.5f;
+                Box(new Rect(centerX - 7f, centerY - 0.5f, 14f, 1f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
+                Box(new Rect(centerX - 0.5f, centerY - 7f, 1f, 14f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
+
+                string prompt = players[i].Hint;
+                if (!string.IsNullOrEmpty(prompt))
+                {
+                    Box(new Rect(left + 22f, height - 112f, half - 44f, 64f), new Color(0.015f, 0.014f, 0.012f, 0.9f));
+                    Label(new Rect(left + 36f, height - 102f, half - 72f, 48f), "[E / A]  " + prompt, hudStyle, Paper);
+                }
+                if (Time.unscaledTime < players[i].MessageUntil)
+                {
+                    Box(new Rect(left + 22f, 108f, half - 44f, 86f), new Color(0.015f, 0.014f, 0.012f, 0.92f));
+                    Label(new Rect(left + 36f, 118f, half - 72f, 66f), players[i].Message, hudStyle, Paper);
+                }
+            }
+        }
+
+        string PauseBody()
+        {
+            string who = "Expedición de " + PlayerLabel(0) + " y " + PlayerLabel(1) + ".";
+            if (!HasRequiredPads()) return who + "\nFalta un mando. Reconecten para poder continuar.";
+            return who + "\nLa expedición está detenida.";
+        }
+
+        string ResultBody()
+        {
+            string who = PlayerLabel(0) + " y " + PlayerLabel(1);
+            if (won) return who + " se coordinaron y cerraron el incidente.";
+            return "El peligro llegó al límite y alcanzó a " + who + ". Pueden repartir la luz y la manivela de otra forma.";
+        }
+
+        string PadStatus()
+        {
+            int need = twoGamepads ? 2 : 1;
+            int have = Gamepad.all.Count;
+            string line = "Mandos conectados: " + have + ".";
+            if (have < need)
+            {
+                return line + (need == 2
+                    ? " Este modo necesita dos mandos. INICIAR EXPEDICIÓN no está disponible."
+                    : " Este modo necesita un mando además del teclado. INICIAR EXPEDICIÓN no está disponible.");
+            }
+            return line + " La expedición puede empezar.";
+        }
+
+        string HelpText()
+        {
+            if (overlay == 0 && padEdit)
+                return "Editando con mando. Arriba y abajo cambian la letra. Izquierda y derecha mueven el cursor. X borra. A o Esc termina.\n" + GameplayHelp;
+            if (overlay == 0 && keyboardEdit)
+                return "Escribiendo. Enter confirma el nombre. Esc sale del campo. Ctrl+V pega.\n" + GameplayHelp;
+            if (overlay == 0)
+                return "Flechas, stick o ratón para elegir. Enter confirma. En un nombre, Enter escribe con teclado y A edita con mando. BACK cambia la entrada. Start inicia si hay mandos suficientes.\n" + GameplayHelp;
+            if (overlay == 1)
+                return "Esc, Start o Continuar reanudan si los mandos siguen conectados. Volver al menú abandona esta expedición.\n" + GameplayHelp;
+            return "R o Volver a intentar empieza otra expedición con los mismos nombres. Volver al menú regresa a los nombres.\n" + GameplayHelp;
+        }
+
+        void Label(Rect rect, string text, GUIStyle style, Color color)
+        {
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.Label(rect, text, style);
+            GUI.color = previous;
+        }
+
+        void DrawTracked(Rect area, string text, GUIStyle style, float tracking, Color color)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            float[] sizes = new float[text.Length];
+            float glyphs = 0f;
+            for (int i = 0; i < text.Length; i++)
+            {
+                sizes[i] = style.CalcSize(new GUIContent(text[i].ToString())).x;
+                glyphs += sizes[i];
+            }
+            float gap = tracking;
+            if (text.Length > 1 && glyphs + gap * (text.Length - 1) > area.width)
+                gap = Mathf.Max(0f, (area.width - glyphs) / (text.Length - 1));
+            float total = glyphs + gap * Mathf.Max(0, text.Length - 1);
+            float x = area.x + (area.width - total) * 0.5f;
+            Color previous = GUI.color;
+            GUI.color = color;
+            for (int i = 0; i < text.Length; i++)
+            {
+                GUI.Label(new Rect(x, area.y, sizes[i] + 8f, area.height), text[i].ToString(), style);
+                x += sizes[i] + gap;
+            }
+            GUI.color = previous;
+        }
+
+        void Rule(float centerX, float y, float width)
+        {
+            Box(new Rect(centerX - width * 0.5f, y, width, 1f), new Color(0.55f, 0.52f, 0.46f, 0.85f));
+        }
+
+        void Frame(Rect rect, Color border, Color fill)
+        {
+            Box(rect, border);
+            Box(new Rect(rect.x + 1f, rect.y + 1f, Mathf.Max(0f, rect.width - 2f), Mathf.Max(0f, rect.height - 2f)), fill);
+        }
+
+        void Stroke(Rect rect, Color border)
+        {
+            Box(new Rect(rect.x, rect.y, rect.width, 1f), border);
+            Box(new Rect(rect.x, rect.yMax - 1f, rect.width, 1f), border);
+            Box(new Rect(rect.x, rect.y, 1f, rect.height), border);
+            Box(new Rect(rect.xMax - 1f, rect.y, 1f, rect.height), border);
+        }
+
+        void Box(Rect rect, Color color)
+        {
+            if (rect.width <= 0f || rect.height <= 0f) return;
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = previous;
+        }
+
+        void EnsureStyles()
+        {
+            EnsureTextures();
+            if (stylesReady) return;
+            serif = LoadSerif();
+            titleStyle = Style(34, FontStyle.Bold, TextAnchor.MiddleCenter, true);
+            glyphStyle = Style(48, FontStyle.Bold, TextAnchor.MiddleLeft, false);
+            bodyStyle = Style(18, FontStyle.Normal, TextAnchor.UpperLeft, true);
+            captionStyle = Style(15, FontStyle.Normal, TextAnchor.MiddleLeft, false);
+            optionStyle = Style(22, FontStyle.Normal, TextAnchor.MiddleLeft, false);
+            fieldStyle = Style(22, FontStyle.Normal, TextAnchor.MiddleLeft, false);
+            smallStyle = Style(14, FontStyle.Normal, TextAnchor.UpperLeft, true);
+            hudStyle = Style(18, FontStyle.Normal, TextAnchor.MiddleLeft, true);
+            hudSmallStyle = Style(14, FontStyle.Normal, TextAnchor.MiddleLeft, false);
+            stylesReady = true;
+        }
+
+        GUIStyle Style(int size, FontStyle weight, TextAnchor anchor, bool wrap)
+        {
+            var style = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = size,
+                fontStyle = weight,
+                alignment = anchor,
+                wordWrap = wrap,
+                clipping = TextClipping.Clip,
+                richText = false
+            };
+            style.normal.textColor = Color.white;
+            if (serif != null) style.font = serif;
+            return style;
+        }
+
+        static Font LoadSerif()
+        {
+            try
+            {
+                string[] installed = Font.GetOSInstalledFontNames();
+                string[] preferred = { "Times New Roman", "Georgia", "Palatino Linotype", "Liberation Serif", "Times", "Nimbus Roman" };
+                foreach (string wanted in preferred)
+                {
+                    foreach (string installedName in installed)
+                    {
+                        if (installedName.StartsWith(wanted, StringComparison.OrdinalIgnoreCase))
+                            return Font.CreateDynamicFontFromOSFont(installedName, 64);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+            return null;
+        }
+
+        void EnsureTextures()
+        {
+            if (grain == null) grain = BuildGrain();
+            if (vignette == null) vignette = BuildVignette();
+        }
+
+        static Texture2D BuildGrain()
+        {
+            const int size = 128;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Point,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            var pixels = new Color32[size * size];
+            var random = new System.Random(2026);
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                byte value = (byte)random.Next(0, 255);
+                byte alpha = (byte)random.Next(40, 150);
+                pixels[i] = new Color32(value, value, value, alpha);
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        static Texture2D BuildVignette()
+        {
+            const int size = 128;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float u = (x + 0.5f) / size * 2f - 1f;
+                    float v = (y + 0.5f) / size * 2f - 1f;
+                    float distance = Mathf.Sqrt(u * u * 0.82f + v * v);
+                    float alpha = Mathf.SmoothStep(0.28f, 1.12f, distance);
+                    pixels[y * size + x] = new Color32(0, 0, 0, (byte)(alpha * 200f));
+                }
+            }
+            texture.SetPixels32(pixels);
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        static string Sanitize(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            char[] chars = value.ToCharArray();
+            int count = 0;
+            for (int i = 0; i < chars.Length && count < MaxName; i++)
+            {
+                if (!char.IsControl(chars[i])) chars[count++] = chars[i];
+            }
+            return new string(chars, 0, count);
+        }
+
+        static string CleanName(string value, string fallback)
+        {
+            value = Sanitize(value).Trim();
+            return value.Length == 0 ? fallback : value;
         }
     }
 }
