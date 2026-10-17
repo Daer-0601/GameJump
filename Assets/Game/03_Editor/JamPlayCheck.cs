@@ -12,18 +12,6 @@ using UnityEngine.InputSystem.LowLevel;
 
 public static class JamPlayCheck
 {
-    static void PlaceCrank(DemoGame game, DemoPlayer player, DemoMechanism target)
-    {
-        if (target.HasCrank) return;
-        foreach (var mechanism in game.mechanisms)
-        {
-            if (!mechanism.HasCrank) continue;
-            mechanism.DetachCrank(player);
-            break;
-        }
-        target.Use(player);
-    }
-
     [MenuItem("Gamejam/Comprobar pulido en Play")]
     public static void Run()
     {
@@ -47,6 +35,18 @@ public static class JamPlayCheck
 
 public class JamPlayProbe : MonoBehaviour
 {
+    static void PlaceCrank(DemoGame game, DemoPlayer player, DemoMechanism target)
+    {
+        if (target.HasCrank) return;
+        foreach (var mechanism in game.mechanisms)
+        {
+            if (!mechanism.HasCrank) continue;
+            mechanism.DetachCrank(player);
+            break;
+        }
+        target.Use(player);
+    }
+
     static readonly MethodInfo Interact = typeof(DemoPlayer).GetMethod("Interact", BindingFlags.Instance | BindingFlags.NonPublic);
     static readonly MethodInfo Simulate = typeof(DemoGame).GetMethod("Simulate", BindingFlags.Instance | BindingFlags.NonPublic);
     static readonly FieldInfo NextDestabilize = typeof(DemoGame).GetField("nextDestabilize", BindingFlags.Instance | BindingFlags.NonPublic);
