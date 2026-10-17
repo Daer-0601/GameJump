@@ -1,0 +1,55 @@
+[
+  {
+    "model": "Circuit Breaker",
+    "textures": [
+      "Fuse-Box-Texture.png"
+    ]
+  },
+  {
+    "model": "Generator",
+    "textures": [
+      "Generator-Texture.png"
+    ]
+  },
+  {
+    "model": "Pipe Valve",
+    "textures": [
+      "Pipe-Texture.png"
+    ]
+  },
+  {
+    "model": "Pipes",
+    "textures": [
+      "Pipe-Texture.png"
+    ]
+  },
+  {
+    "model": "Pump",
+    "textures": [
+      "Pump-Texture.png"
+    ]
+  },
+  {
+    "model": "Switch",
+    "textures": [
+      "Switch-Texture.png"
+    ]
+  },
+  {
+    "model": "Transformer",
+    "textures": [
+      "Transformer-Texture.png"
+    ]
+  },
+  {
+    "model": "Turbine",
+    "textures": [
+      "Turbine-Texture.png",
+      "Turbine-Texture.png"
+    ]
+  },
+  {
+    "model": "Wires",
+    "textures": []
+  }
+]

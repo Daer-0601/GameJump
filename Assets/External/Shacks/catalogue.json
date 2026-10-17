@@ -1,0 +1,67 @@
+[
+  {
+    "model": "Barrel",
+    "textures": []
+  },
+  {
+    "model": "Chainlink Fence",
+    "textures": []
+  },
+  {
+    "model": "Concrete Barricade",
+    "textures": [
+      "Concrete Barricade Texture.png"
+    ]
+  },
+  {
+    "model": "Concrete Ramps",
+    "textures": [
+      "Concrete Floor Texture.png"
+    ]
+  },
+  {
+    "model": "Handrail",
+    "textures": []
+  },
+  {
+    "model": "Large Shed A",
+    "textures": [
+      "Shed Frame Texture.png",
+      "Shed Corrugated Texture.png"
+    ]
+  },
+  {
+    "model": "Large Shed B",
+    "textures": [
+      "Shed Frame Texture.png",
+      "Shed Corrugated Texture.png"
+    ]
+  },
+  {
+    "model": "Leanto A",
+    "textures": []
+  },
+  {
+    "model": "Leanto B",
+    "textures": []
+  },
+  {
+    "model": "Metal Gantry Floor",
+    "textures": []
+  },
+  {
+    "model": "Pallet",
+    "textures": [
+      "Pallet-Texture.png",
+      "Pallet-Texture.png"
+    ]
+  },
+  {
+    "model": "Shack A",
+    "textures": []
+  },
+  {
+    "model": "Stairs",
+    "textures": []
+  }
+]
