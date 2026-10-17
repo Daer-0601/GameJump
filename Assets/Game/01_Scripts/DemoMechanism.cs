@@ -99,16 +99,17 @@ namespace Gamejam2026
         public string GetHint(DemoPlayer player)
         {
             if (player == null) return string.Empty;
+            string useKey = "[" + DemoPlayerInput.UseLabel(player.playerIndex) + "] ";
 
             if (HasCrank)
             {
                 if (player.Held == null)
-                    return "Retirar manivela";
-                return "Solta lo que llevas para retirar la manivela";
+                    return useKey + "Retirar manivela del soporte " + symbol;
+                return "Manos ocupadas: suelta el objeto para retirar la manivela";
             }
 
             if (player.Held != null && !player.Held.isCandle)
-                return "Colocar manivela";
+                return useKey + "Colocar manivela en el soporte " + symbol;
 
             if (player.Held != null && player.Held.isCandle)
                 return "Necesitas la manivela (deja la vela con " + DemoPlayerInput.DropLabel(player.playerIndex) + ")";
@@ -129,6 +130,7 @@ namespace Gamejam2026
             {
                 game.Activate(this, player);
             }
+            else if (player != null) player.Tell("Manivela colocada en el soporte " + symbol + ".");
             return true;
         }
 
@@ -138,6 +140,7 @@ namespace Gamejam2026
             var crank = mountedCrank;
             mountedCrank = null;
             crank.PickUp(player);
+            player.Tell("Manivela retirada del soporte " + symbol + ". Caminas más lento mientras la llevas.");
             return true;
         }
 
@@ -153,7 +156,7 @@ namespace Gamejam2026
                 }
                 else
                 {
-                    player.Tell("Solta lo que llevas para retirar la manivela.");
+                    player.Tell("Pulsa " + DemoPlayerInput.DropLabel(player.playerIndex) + " para soltar lo que llevas antes de retirar la manivela.");
                 }
             }
             else

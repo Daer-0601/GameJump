@@ -1010,6 +1010,7 @@ namespace Gamejam2026
                 Box(new Rect(left + 16f, 16f, 2f, 78f), Paper);
                 Label(new Rect(left + 28f, 22f, 28f, 26f), (i + 1).ToString(), hudStyle, Ash);
                 string held = players[i].Held ? players[i].Held.displayName : "manos libres";
+                if (players[i].Held && !players[i].Held.isCandle) held += " (pesada)";
                 Label(new Rect(left + 56f, 22f, half - 84f, 26f), PlayerLabel(i) + "   /   " + held, hudStyle, Paper);
                 int loose = CountUnstable();
                 string danger = completed + "/3 mecanismos    peligro " + Mathf.CeilToInt(Danger) + "%";
@@ -1025,16 +1026,22 @@ namespace Gamejam2026
                 Box(new Rect(centerX - 0.5f, centerY - 7f, 1f, 14f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
 
                 string prompt = players[i].Hint;
+                string dropPrompt = players[i].DropHint;
+                bool hasPrompt = !string.IsNullOrEmpty(prompt);
+                bool hasDropPrompt = !string.IsNullOrEmpty(dropPrompt);
+                float panelHeight = hasPrompt ? (hasDropPrompt ? 92f : 64f) : 40f;
+                float panelTop = height - 48f - panelHeight;
                 var stabilizing = players[i].Stabilizing;
                 if (stabilizing && stabilizing.unstable)
                 {
-                    Box(new Rect(left + 36f, height - 132f, half - 72f, 8f), new Color(0.12f, 0.1f, 0.08f));
-                    Box(new Rect(left + 36f, height - 132f, (half - 72f) * stabilizing.Hold01, 8f), Paper);
+                    Box(new Rect(left + 36f, panelTop - 20f, half - 72f, 8f), new Color(0.12f, 0.1f, 0.08f));
+                    Box(new Rect(left + 36f, panelTop - 20f, (half - 72f) * stabilizing.Hold01, 8f), Paper);
                 }
-                if (!string.IsNullOrEmpty(prompt))
+                if (hasPrompt || hasDropPrompt)
                 {
-                    Box(new Rect(left + 22f, height - 112f, half - 44f, 64f), new Color(0.015f, 0.014f, 0.012f, 0.9f));
-                    Label(new Rect(left + 36f, height - 102f, half - 72f, 48f), "[" + DemoPlayerInput.UseLabel(players[i].playerIndex) + "]  " + prompt, hudStyle, Paper);
+                    Box(new Rect(left + 22f, panelTop, half - 44f, panelHeight), new Color(0.015f, 0.014f, 0.012f, 0.9f));
+                    if (hasPrompt) Label(new Rect(left + 36f, panelTop + 10f, half - 72f, 48f), prompt, hudStyle, Paper);
+                    if (hasDropPrompt) Label(new Rect(left + 36f, height - 78f, half - 72f, 24f), dropPrompt, hudSmallStyle, Paper);
                 }
                 if (Time.unscaledTime < players[i].MessageUntil)
                 {
