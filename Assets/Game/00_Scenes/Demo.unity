@@ -10502,6 +10502,7 @@ MonoBehaviour:
   jumpScareClip: {fileID: 8300000, guid: fcac47a526d8ce14582a1143474421dd, type: 3}
   dangerClip: {fileID: 8300000, guid: 0777f8812407744419c79c9d97b9695d, type: 3}
   gearsClip: {fileID: 8300000, guid: 7999ff740c7cb954fb585b32c57e9d9e, type: 3}
+  menuBackground: {fileID: 2800000, guid: 53552162865c2e4439c4e890aa9b129a, type: 3}
   sfxVolume: 0.8
   dangerAlarmThreshold: 70
   dangerAlarmInterval: 5

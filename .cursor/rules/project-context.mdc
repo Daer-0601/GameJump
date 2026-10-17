@@ -1,0 +1,12 @@
+---
+description: Contexto y convenciones permanentes del prototipo cooperativo de terror en Unity.
+alwaysApply: true
+---
+
+# Contexto del proyecto
+
+Lee `AGENTS.md` y `CONTEXT.md` antes de cambios sustanciales. El proyecto es un prototipo cooperativo local de terror para dos jugadores en Unity 6000.5.6f1, URP e Input System. La escena principal está en `Assets/Game/00_Scenes/Demo.unity`; los scripts, materiales, herramientas y audios están en `01_Scripts`, `02_Materials`, `03_Editor` y `04_Audio`.
+
+Aplica el skill `.cursor/skills/unity-expert/SKILL.md` al tocar código, escenas o herramientas Unity, y `.cursor/skills/video-game-ui-ux/SKILL.md` al diseñar experiencia o interfaz. En caso de solapamiento, usa ambos.
+
+Preserva los cambios locales, GUID y archivos `.meta`. `DemoBuilder` puede sustituir la escena. Comprueba el comportamiento real en el proyecto antes de depender del README o el concepto. No declares verificado algo que no se ejecutó en Unity.
