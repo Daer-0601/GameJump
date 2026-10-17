@@ -35,6 +35,9 @@ namespace Gamejam2026
         [Range(0f, 1f)] public float sfxVolume = 0.8f;
         [Range(0f, 100f)] public float dangerAlarmThreshold = 70f;
         public float dangerAlarmInterval = 5f;
+        [Range(80f, 99f)] public float criticalDanger = 92f;
+        [Range(0.4f, 1f)] public float hitchScale = 0.8f;
+        public float hitchSeconds = 0.12f;
         public float dangerPerSecond = 0.31f;
         public float darknessPenalty = 0.6f;
         public float errorPenalty = 12f;
@@ -69,6 +72,14 @@ namespace Gamejam2026
         float disturbanceUntil;
         float nextDangerAlarm;
         float nextDestabilize = -1f;
+        float hitchUntil;
+        bool hitchSpent;
+        int dangerBand = -1;
+        AudioSource roomBed;
+        float roomBedVolume = 0.823f;
+        bool roomBedCached;
+        string pulseText = "";
+        float pulseUntil;
         AudioSource sfxSource;
         DemoAtmosphere atmosphere;
         AudioClip errorClip;
@@ -221,6 +232,11 @@ namespace Gamejam2026
             RefreshOverlay();
             if (overlay < 0) Simulate();
             ApplyAmbience();
+            if (hitchUntil > 0f && (paused || finished || Time.unscaledTime >= hitchUntil))
+            {
+                hitchUntil = 0f;
+                if (!paused && !finished) Time.timeScale = 1f;
+            }
         }
 
         void Simulate()
@@ -241,6 +257,13 @@ namespace Gamejam2026
                 if (!lit) rate += darknessPenalty;
             }
             Danger = Mathf.Clamp(Danger + rate * Time.deltaTime, 0f, 100f);
+            NoteDangerBand();
+            if (!hitchSpent && Danger >= criticalDanger && Time.timeScale > 0.95f)
+            {
+                hitchSpent = true;
+                hitchUntil = Time.unscaledTime + Mathf.Max(0.04f, hitchSeconds);
+                Time.timeScale = hitchScale;
+            }
             if (Danger >= dangerAlarmThreshold && elapsed >= nextDangerAlarm)
             {
                 PlaySfx(dangerClip);
@@ -270,7 +293,11 @@ namespace Gamejam2026
             }
             mechanism.done = true;
             completed++;
-            if (completed == 1) FirstMechanismCompleted?.Invoke(mechanism);
+            if (completed == 1)
+            {
+                FirstMechanismCompleted?.Invoke(mechanism);
+                Pulse("El paso se abre");
+            }
             if (nextDestabilize < 0f) ScheduleDestabilize();
             PlaySfx(gearsClip);
             PlaySfx(lightClip);
@@ -285,6 +312,7 @@ namespace Gamejam2026
         {
             if (!Playing || mechanism == null || player == null) return;
             PlaySfx(gearsClip);
+            Pulse(mechanism.symbol + " estable");
             Danger = Mathf.Max(0f, Danger - stabilizeRelief);
             foreach (var teammate in players) teammate.Tell("¡CLONC! " + mechanism.symbol + " estabilizado. −" + stabilizeRelief.ToString("0") + "% peligro.");
             TryWin();
@@ -317,6 +345,7 @@ namespace Gamejam2026
                 pick.unstable = true;
                 disturbanceUntil = elapsed + 1.6f;
                 PlaySfx(dangerClip);
+                Pulse(pick.symbol + " desajustado");
                 foreach (var teammate in players)
                     if (teammate) teammate.Tell(pick.symbol + " se desajusto. Estabilizalo sin la manivela.");
             }
@@ -379,6 +408,7 @@ namespace Gamejam2026
             won = success;
             if (atmosphere) atmosphere.Finish(success);
             if (!success) PlaySfx(jumpScareClip);
+            hitchUntil = 0f;
             Time.timeScale = 0f;
             LockPointer();
             RoundFinished?.Invoke(success);
@@ -422,6 +452,7 @@ namespace Gamejam2026
         void PauseNow()
         {
             paused = true;
+            hitchUntil = 0f;
             Time.timeScale = 0f;
             LockPointer();
         }
@@ -529,11 +560,50 @@ namespace Gamejam2026
             AudioListener.volume = masterVolume;
         }
 
+        void CacheRoomBed()
+        {
+            if (roomBedCached) return;
+            roomBedCached = true;
+            foreach (var source in FindObjectsByType<AudioSource>(FindObjectsInactive.Exclude))
+            {
+                if (!source || source == ambience || source.gameObject.name != "AmbientBackground") continue;
+                roomBed = source;
+                roomBedVolume = source.volume > 0.01f ? source.volume : 0.823f;
+                if (!source.isPlaying && source.clip) source.Play();
+                break;
+            }
+        }
+
+        public void Pulse(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            pulseText = text;
+            pulseUntil = Time.unscaledTime + 1.5f;
+        }
+
+        void NoteDangerBand()
+        {
+            int band = Danger >= 90f ? 3 : Danger >= dangerAlarmThreshold ? 2 : Danger >= 40f ? 1 : 0;
+            if (band > dangerBand)
+            {
+                if (band == 1) Pulse("El peligro sube");
+                else if (band == 2) Pulse("Peligro alto");
+                else if (band == 3) Pulse("Peligro crítico");
+            }
+            dangerBand = band;
+        }
+
         void ApplyAmbience()
         {
-            if (!ambience) return;
-            float bed = started ? Mathf.Lerp(0.16f, 0.42f, Danger / 100f) : 0.16f;
-            ambience.volume = bed * ambienceVolume;
+            CacheRoomBed();
+            if (ambience)
+            {
+                // Same curve as e8ee163: one looping clip, volume only, never restarted.
+                float bed = started ? Mathf.Lerp(0.16f, 0.42f, Danger / 100f) : 0.16f;
+                ambience.volume = bed * ambienceVolume;
+                if (!ambience.isPlaying && ambience.clip) ambience.Play();
+            }
+            if (roomBed) roomBed.volume = roomBedVolume * ambienceVolume;
         }
 
         void SaveAudio()
@@ -1335,7 +1405,8 @@ namespace Gamejam2026
                 string danger = completed + "/3 mecanismos    peligro " + Mathf.CeilToInt(Danger) + "%";
                 if (loose > 0) danger += "    " + loose + (loose == 1 ? " desajustado" : " desajustados");
                 if (Danger >= dangerAlarmThreshold) danger += "    alto";
-                Label(new Rect(left + 56f, 52f, half - 84f, 24f), danger, hudSmallStyle, Ash);
+                if (Time.unscaledTime < pulseUntil) danger += "    " + pulseText;
+                Label(new Rect(left + 56f, 52f, half - 84f, 24f), danger, hudSmallStyle, Danger >= dangerAlarmThreshold ? Accent : Ash);
                 Box(new Rect(left + 20f, height - 18f, half - 40f, 4f), new Color(0.16f, 0.15f, 0.13f, 0.9f));
                 Box(new Rect(left + 20f, height - 18f, (half - 40f) * Danger / 100f, 4f), Paper);
 
@@ -1350,11 +1421,16 @@ namespace Gamejam2026
                 bool hasDropPrompt = !string.IsNullOrEmpty(dropPrompt);
                 float panelHeight = hasPrompt ? (hasDropPrompt ? 92f : 64f) : 40f;
                 float panelTop = height - 48f - panelHeight;
-                var stabilizing = players[i].Stabilizing;
-                if (stabilizing && stabilizing.unstable)
+                var focus = players[i].FocusedMechanism;
+                if (focus && focus.unstable)
                 {
-                    Box(new Rect(left + 36f, panelTop - 20f, half - 72f, 8f), new Color(0.12f, 0.1f, 0.08f));
-                    Box(new Rect(left + 36f, panelTop - 20f, (half - 72f) * stabilizing.Hold01, 8f), Paper);
+                    float y = panelTop - 40f;
+                    int percent = Mathf.RoundToInt(focus.Hold01 * 100f);
+                    string key = DemoPlayerInput.UseLabel(i);
+                    string state = players[i].Stabilizing != null ? "estabilizando" : "desajustado";
+                    Label(new Rect(left + 36f, y - 16f, half - 72f, 16f), focus.symbol + "  " + state + "  [" + key + "] mantener  " + percent + "%", hudSmallStyle, Paper);
+                    Box(new Rect(left + 36f, y, half - 72f, 8f), new Color(0.12f, 0.1f, 0.08f));
+                    Box(new Rect(left + 36f, y, (half - 72f) * focus.Hold01, 8f), players[i].Stabilizing != null ? Accent : Paper);
                 }
                 if (hasPrompt || hasDropPrompt)
                 {

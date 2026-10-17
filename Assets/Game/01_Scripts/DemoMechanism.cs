@@ -55,7 +55,13 @@ namespace Gamejam2026
             rattle = gameObject.AddComponent<AudioSource>();
             rattle.playOnAwake = false;
             rattle.loop = true;
-            rattle.spatialBlend = 0f; // Both split-screen players must hear nearby faults.
+            // One AudioListener sits on the first camera. Full 3D attenuation would ignore player 2,
+            // so loudness follows the nearest player and the clip is started once.
+            rattle.spatialBlend = 0f;
+            rattle.dopplerLevel = 0f;
+            rattle.minDistance = 1.6f;
+            rattle.maxDistance = 17f;
+            rattle.rolloffMode = AudioRolloffMode.Linear;
             rattle.volume = 0f;
             if (game.gearsClip)
             {
@@ -196,7 +202,11 @@ namespace Gamejam2026
 
         void LateUpdate()
         {
-            if (!heldThisFrame) stabilizeProgress = 0f;
+            if (!heldThisFrame)
+            {
+                if (stabilizeProgress > 0.15f && game) game.Pulse("Estabilización interrumpida");
+                stabilizeProgress = 0f;
+            }
             heldThisFrame = false;
         }
 
@@ -210,7 +220,8 @@ namespace Gamejam2026
                 if (!rattle.isPlaying) rattle.Play();
                 float distance = float.MaxValue;
                 foreach (var player in game.players) distance = Mathf.Min(distance, Vector3.Distance(transform.position, player.transform.position));
-                rattle.volume = Mathf.Clamp01(1f - distance / 17f) * game.sfxVolume * 0.32f;
+                float atten = Mathf.Clamp01(1f - distance / rattle.maxDistance);
+                rattle.volume = atten * atten * game.sfxVolume * 0.45f;
                 rattle.pitch = 0.8f + Mathf.Sin(Time.time * 7f) * 0.06f;
             }
             else if (rattle.isPlaying) rattle.Stop();

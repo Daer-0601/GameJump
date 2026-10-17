@@ -20,6 +20,11 @@ namespace Gamejam2026
         bool victory;
         float ending;
         float shock;
+        float nextMono = 2f;
+        float monoUntil;
+        [Range(0.7f, 1f)] public float monoDanger = 0.85f;
+        public float monoSeconds = 0.07f;
+        public float monoGap = 2.2f;
         public float Blackout => ended && !victory ? Mathf.Clamp01(ending / 1.8f) : 0f;
 
         public void Initialize(DemoGame owner)
@@ -86,11 +91,23 @@ namespace Gamejam2026
             float danger = game.Danger / 100f;
             float disturbance = game.Playing ? game.Disturbance : 0f;
             float relief = victory ? Mathf.Clamp01(ending / 1.5f) : 0f;
-            RenderSettings.fogDensity = Mathf.Lerp(Mathf.Lerp(0.03f, 0.06f, danger), 0.012f, relief);
-            vignette.intensity.Override(Mathf.Lerp(0.22f + danger * 0.18f + shock * 0.13f + disturbance * 0.035f, 0.12f, relief));
+            float critical = Mathf.InverseLerp(0.75f, 1f, danger);
+            RenderSettings.fogDensity = Mathf.Lerp(Mathf.Lerp(0.03f, 0.065f, danger), 0.012f, relief);
+            vignette.intensity.Override(Mathf.Lerp(0.22f + danger * 0.18f + critical * 0.08f + shock * 0.13f + disturbance * 0.035f, 0.12f, relief));
             grain.intensity.Override(Mathf.Lerp(0.12f + danger * 0.22f, 0.04f, relief));
             aberration.intensity.Override(Mathf.Lerp(0.015f + danger * 0.055f + shock * 0.06f, 0f, relief));
-            colors.postExposure.Override(-Blackout * 8f);
+            bool mono = false;
+            if (game.Playing && danger >= monoDanger)
+            {
+                if (Time.time >= nextMono)
+                {
+                    nextMono = Time.time + Mathf.Max(0.4f, monoGap);
+                    monoUntil = Time.time + Mathf.Clamp(monoSeconds, 0.03f, 0.15f);
+                }
+                mono = Time.time < monoUntil;
+            }
+            colors.saturation.Override(mono ? -100f : 0f);
+            colors.postExposure.Override(-Blackout * 8f - critical * 0.22f);
             if (victory && victoryLights != null)
             {
                 foreach (var light in victoryLights) if (light) light.intensity = relief * 4f;

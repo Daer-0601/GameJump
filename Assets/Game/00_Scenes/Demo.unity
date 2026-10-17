@@ -26488,6 +26488,7 @@ MonoBehaviour:
   panel: {fileID: 1699138953}
   blocker: {fileID: 1699138950}
   openingSeconds: 1.5
+  openingClip: {fileID: 8300000, guid: c15bef609b2f14c4aa2a27406ddf2fc7, type: 3}
   onOpening:
     m_PersistentCalls:
       m_Calls: []
@@ -31476,7 +31477,7 @@ AudioSource:
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 8300000, guid: 41c01ba9cfed98a448dc686f52a1de89, type: 3}
-  m_PlayOnAwake: 0
+  m_PlayOnAwake: 1
   m_Volume: 0.823
   m_Pitch: 1
   Loop: 1

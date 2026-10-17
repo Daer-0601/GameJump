@@ -10,8 +10,11 @@ namespace Gamejam2026
         public Transform panel;
         public Collider blocker;
         [Min(0f)] public float openingSeconds = 1.5f;
+        public AudioClip openingClip;
         [Tooltip("Eduardo puede conectar aquí el sonido de apertura; se dispara una sola vez.")]
         public UnityEvent onOpening = new UnityEvent();
+        AudioSource openingSource;
+        bool openingSoundPlayed;
         public bool OpenRequested { get; private set; }
         public bool IsOpen { get; private set; }
         public float Open01 { get; private set; }
@@ -26,6 +29,10 @@ namespace Gamejam2026
                 closedPosition = panel.localPosition;
                 closedScale = panel.localScale;
             }
+            openingSource = gameObject.AddComponent<AudioSource>();
+            openingSource.playOnAwake = false;
+            openingSource.spatialBlend = 0f;
+            openingSource.loop = false;
         }
 
         void OnEnable()
@@ -45,6 +52,12 @@ namespace Gamejam2026
         {
             if (OpenRequested) return;
             OpenRequested = true;
+            if (!openingSoundPlayed && openingClip && openingSource)
+            {
+                openingSoundPlayed = true;
+                float effects = game ? game.sfxVolume : 0.8f;
+                openingSource.PlayOneShot(openingClip, effects * 0.85f);
+            }
             onOpening?.Invoke();
             if (openingSeconds <= 0f) Apply(1f);
         }

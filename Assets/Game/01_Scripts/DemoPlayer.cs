@@ -28,6 +28,11 @@ namespace Gamejam2026
         public string Message { get; private set; }
         public float MessageUntil { get; private set; }
         public DemoMechanism Stabilizing { get; private set; }
+        public DemoMechanism FocusedMechanism { get; private set; }
+        [Range(0f, 0.03f)] public float shakeAtFullDanger = 0.008f;
+        [Range(0f, 0.04f)] public float shakeAtCritical = 0.014f;
+        Vector3 viewRest;
+        bool viewRestReady;
         DemoClue readingClue;
         CharacterController controller;
         AudioSource footstepsSource;
@@ -44,6 +49,33 @@ namespace Gamejam2026
             footstepsSource = gameObject.AddComponent<AudioSource>();
             footstepsSource.playOnAwake = false;
             footstepsSource.spatialBlend = 0f;
+            if (view)
+            {
+                viewRest = view.transform.localPosition;
+                viewRestReady = true;
+            }
+        }
+
+        void LateUpdate()
+        {
+            if (!view || !viewRestReady) return;
+            float amount = 0f;
+            if (game && game.Playing)
+            {
+                float danger = game.Danger / 100f;
+                amount = shakeAtFullDanger * danger;
+                if (game.Danger >= game.dangerAlarmThreshold) amount += shakeAtCritical * Mathf.InverseLerp(game.dangerAlarmThreshold, 100f, game.Danger);
+            }
+            Vector3 offset = Vector3.zero;
+            if (amount > 0.0001f)
+            {
+                float t = Time.time;
+                offset = new Vector3(
+                    Mathf.PerlinNoise(t * 17f, 2.3f + playerIndex) - 0.5f,
+                    Mathf.PerlinNoise(8f + playerIndex, t * 15f) - 0.5f,
+                    0f) * amount * 2f;
+            }
+            view.transform.localPosition = viewRest + offset;
         }
 
         public void Tell(string text, float seconds = 3f)
@@ -67,6 +99,7 @@ namespace Gamejam2026
             if (!game || !game.PlayerInputEnabled)
             {
                 Stabilizing = null;
+                FocusedMechanism = null;
                 lookVelocity = Vector2.zero;
                 return;
             }
@@ -129,6 +162,7 @@ namespace Gamejam2026
         {
             Hint = string.Empty;
             Stabilizing = null;
+            FocusedMechanism = null;
             if (drop && Held != null)
             {
                 string itemName = Held.displayName;
@@ -156,6 +190,7 @@ namespace Gamejam2026
                 {
                     if (mechanism.unstable)
                     {
+                        FocusedMechanism = mechanism;
                         if (useHeld && mechanism.done) Stabilizing = mechanism;
                         mechanism.Hold(this, useHeld);
                         int percent = Mathf.RoundToInt(mechanism.Hold01 * 100f);

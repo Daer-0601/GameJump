@@ -49,7 +49,7 @@ Comprueba los controles en código antes de cambiarlos y mantén señales claras
 - Usa oscuridad y tensión sin ocultar información necesaria para jugar.
 - La interfaz debe ayudar a coordinarse: nombres, orden, progreso, peligro, objeto que lleva cada jugador, interacción disponible, pausa y resultado.
 - En pantalla dividida, diseña para que cada mitad conserve jerarquía, legibilidad y espacio útil.
-- El sonido y la iluminación deben reforzar estados reales del juego y tener niveles de volumen razonables.
+- El sonido y la iluminación deben reforzar estados reales del juego y tener niveles de volumen razonables. El ambiente tiene dos loops: `AmbientBackground` a volumen fijo y `Ambiente - audio original CC0`, cuyo volumen sube de 0.16 a 0.42 con el peligro. El control de ambiente los escala a los dos. La alarma, el desajuste, el engranaje, la apertura del paso y el susto final son efectos aparte.
 - Mantén accesibles textos y señales importantes. No comuniques peligro, progreso o interacción solo mediante color o solo mediante audio.
 
 ## Assets y cambios
