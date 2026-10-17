@@ -3396,7 +3396,7 @@ GameObject:
   - component: {fileID: 1252731331}
   - component: {fileID: 1252731330}
   m_Layer: 0
-  m_Name: 'Cartel LEE LA INSCRIPCION [E / A]'
+  m_Name: 'Cartel LEE LA INSCRIPCION [E / U]'
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3427,7 +3427,7 @@ TextMesh:
   m_GameObject: {fileID: 1252731328}
   m_Text: 'LEE LA INSCRIPCION
 
-    [E / A]'
+    [E / U]'
   m_OffsetZ: 0
   m_CharacterSize: 0.045
   m_LineSpacing: 1

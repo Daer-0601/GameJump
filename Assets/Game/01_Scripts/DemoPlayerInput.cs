@@ -7,7 +7,7 @@ namespace Gamejam2026
     public static class DemoPlayerInput
     {
         public const string Help = "J1: WASD, E usar, Shift izq. correr, Q soltar; F/H y T/G mirar (o mouse).\n"
-            + "J2: flechas, A usar, Shift der. correr, O soltar; J/L e I/K mirar. Esc pausa.";
+            + "J2: flechas, U usar, Shift der. correr, O soltar; J/L e I/K mirar. Esc pausa.";
 
         public readonly struct State
         {
@@ -27,7 +27,7 @@ namespace Gamejam2026
             }
         }
 
-        public static string UseLabel(int playerIndex) => playerIndex == 0 ? "E" : "A";
+        public static string UseLabel(int playerIndex) => playerIndex == 0 ? "E" : "U";
         public static string DropLabel(int playerIndex) => playerIndex == 0 ? "Q" : "O";
 
         public static State Read(int playerIndex, float keyboardLookSpeed, float mouseSensitivity, float deltaTime)
@@ -58,7 +58,7 @@ namespace Gamejam2026
                 look = new Vector2(Axis(keyboard.jKey.isPressed, keyboard.lKey.isPressed),
                     Axis(keyboard.kKey.isPressed, keyboard.iKey.isPressed)) * keyboardLookSpeed * deltaTime;
                 run = keyboard.rightShiftKey.isPressed;
-                use = keyboard.aKey.wasPressedThisFrame;
+                use = keyboard.uKey.wasPressedThisFrame;
                 drop = keyboard.oKey.wasPressedThisFrame;
             }
             return new State(move, look, run, use, drop);

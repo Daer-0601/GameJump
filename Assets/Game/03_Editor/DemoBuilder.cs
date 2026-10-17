@@ -65,7 +65,7 @@ public static class DemoBuilder
 
         var plaque = Shape("Inscripcion - interactuar para leer", PrimitiveType.Cube, new Vector3(0, 1.3f, -1), new Vector3(2.2f, 1.5f, 0.25f), stone, environment);
         plaque.AddComponent<DemoClue>();
-        Label("LEE LA INSCRIPCION\n[E / A]", new Vector3(0, 1.55f, -1.15f), 0, 0.045f);
+        Label("LEE LA INSCRIPCION\n[E / U]", new Vector3(0, 1.55f, -1.15f), 0, 0.045f);
         Label("A", new Vector3(-10, 2.7f, 4), 0, 0.16f);
         Label("B", new Vector3(10, 2.7f, 5), 0, 0.16f);
         Label("C", new Vector3(0, 2.7f, 15), 0, 0.16f);
