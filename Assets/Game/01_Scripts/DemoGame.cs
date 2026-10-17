@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
@@ -12,6 +13,12 @@ namespace Gamejam2026
         const int MaxName = 18;
         const string NameKey1 = "AOscuras.Name1";
         const string NameKey2 = "AOscuras.Name2";
+        const string MasterKey = "AOscuras.VolMaster";
+        const string AmbienceKey = "AOscuras.VolAmb";
+        const string SfxKey = "AOscuras.VolSfx";
+        const string FullKey = "AOscuras.Fullscreen";
+        const string WidthKey = "AOscuras.ResW";
+        const string HeightKey = "AOscuras.ResH";
         const string GameplayHelp = DemoPlayerInput.Help;
 
         public DemoPlayer[] players;
@@ -24,6 +31,7 @@ namespace Gamejam2026
         public AudioClip jumpScareClip;
         public AudioClip dangerClip;
         public AudioClip gearsClip;
+        public Texture2D menuBackground;
         [Range(0f, 1f)] public float sfxVolume = 0.8f;
         [Range(0f, 100f)] public float dangerAlarmThreshold = 70f;
         public float dangerAlarmInterval = 5f;
@@ -68,14 +76,20 @@ namespace Gamejam2026
         int hitCount;
         int pointerFrame = -1;
         bool keyboardEdit;
+        bool optionsOpen;
+        bool fullscreen;
+        float masterVolume = 1f;
+        float ambienceVolume = 1f;
+        Resolution[] displayModes = System.Array.Empty<Resolution>();
+        int resolutionIndex;
         float axisTimerX;
         float axisTimerY;
         float backspaceTimer;
         MenuCommand command;
         Keyboard textKeyboard;
 
-        readonly Rect[] hits = new Rect[4];
-        readonly Rect[] visuals = new Rect[4];
+        readonly Rect[] hits = new Rect[6];
+        readonly Rect[] visuals = new Rect[6];
         Rect columnRect;
         Rect titleRect;
         Rect briefRect;
@@ -101,6 +115,7 @@ namespace Gamejam2026
         static readonly Color Ash = new Color(0.58f, 0.54f, 0.48f, 1f);
         static readonly Color DisabledInk = new Color(0.46f, 0.44f, 0.40f, 1f);
         static readonly Color Wash = new Color(0.012f, 0.011f, 0.01f, 0.9f);
+        static readonly Color Accent = new Color(0.62f, 0.16f, 0.12f, 1f);
 
         static class Memory
         {
@@ -157,6 +172,7 @@ namespace Gamejam2026
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             if (ambience) ambience.Play();
+            ApplyAudio();
 
             bool pendingStart = Memory.AutoStart;
             Memory.AutoStart = false;
@@ -198,6 +214,7 @@ namespace Gamejam2026
 
             RefreshOverlay();
             if (overlay < 0) Simulate();
+            ApplyAmbience();
         }
 
         void Simulate()
@@ -230,7 +247,6 @@ namespace Gamejam2026
                 disturbanceUntil = elapsed + 1.4f;
                 nextDisturbance = elapsed + UnityEngine.Random.Range(14f, 24f) * Mathf.Lerp(1f, 0.6f, Danger / 100f);
             }
-            if (ambience) ambience.volume = Mathf.Lerp(0.16f, 0.42f, Danger / 100f);
         }
 
         public void Activate(DemoMechanism mechanism, DemoPlayer player)
@@ -425,6 +441,7 @@ namespace Gamejam2026
         void QuitGame()
         {
             SaveNames();
+            SaveAudio();
 #if UNITY_EDITOR
             UnityEditor.EditorApplication.isPlaying = false;
 #else
@@ -441,6 +458,132 @@ namespace Gamejam2026
         {
             name1 = Sanitize(PlayerPrefs.GetString(NameKey1, ""));
             name2 = Sanitize(PlayerPrefs.GetString(NameKey2, ""));
+            masterVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(MasterKey, 1f));
+            ambienceVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(AmbienceKey, 1f));
+            if (PlayerPrefs.HasKey(SfxKey)) sfxVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(SfxKey, sfxVolume));
+            fullscreen = PlayerPrefs.HasKey(FullKey) ? PlayerPrefs.GetInt(FullKey, 1) == 1 : Screen.fullScreen;
+            int wantW = PlayerPrefs.GetInt(WidthKey, Screen.width);
+            int wantH = PlayerPrefs.GetInt(HeightKey, Screen.height);
+#if UNITY_EDITOR
+            fullscreen = Screen.fullScreen;
+            wantW = Screen.width;
+            wantH = Screen.height;
+#endif
+            BuildResolutions(wantW, wantH);
+#if !UNITY_EDITOR
+            if (PlayerPrefs.HasKey(WidthKey) && PlayerPrefs.HasKey(HeightKey) && displayModes.Length > 0)
+                ApplyDisplay();
+#endif
+        }
+
+        void BuildResolutions(int wantW, int wantH)
+        {
+            var unique = new List<Resolution>();
+            foreach (Resolution mode in Screen.resolutions)
+            {
+                bool seen = false;
+                for (int i = 0; i < unique.Count; i++)
+                {
+                    if (unique[i].width == mode.width && unique[i].height == mode.height) seen = true;
+                }
+                if (!seen) unique.Add(mode);
+            }
+            unique.Sort((a, b) => a.width != b.width ? a.width.CompareTo(b.width) : a.height.CompareTo(b.height));
+            displayModes = unique.ToArray();
+            resolutionIndex = 0;
+            for (int i = 0; i < displayModes.Length; i++)
+            {
+                if (displayModes[i].width == wantW && displayModes[i].height == wantH) resolutionIndex = i;
+            }
+        }
+
+        float OptionValue(int index)
+        {
+            if (index == 0) return masterVolume;
+            if (index == 1) return ambienceVolume;
+            return sfxVolume;
+        }
+
+        void SetOption(int index, float value)
+        {
+            value = Mathf.Clamp01(value);
+            if (index == 0) masterVolume = value;
+            else if (index == 1) ambienceVolume = value;
+            else sfxVolume = value;
+            ApplyAudio();
+            ApplyAmbience();
+        }
+
+        void ApplyAudio()
+        {
+            AudioListener.volume = masterVolume;
+        }
+
+        void ApplyAmbience()
+        {
+            if (!ambience) return;
+            float bed = started ? Mathf.Lerp(0.16f, 0.42f, Danger / 100f) : 0.16f;
+            ambience.volume = bed * ambienceVolume;
+        }
+
+        void SaveAudio()
+        {
+            PlayerPrefs.SetFloat(MasterKey, masterVolume);
+            PlayerPrefs.SetFloat(AmbienceKey, ambienceVolume);
+            PlayerPrefs.SetFloat(SfxKey, sfxVolume);
+#if !UNITY_EDITOR
+            PlayerPrefs.SetInt(FullKey, fullscreen ? 1 : 0);
+            if (displayModes.Length > 0)
+            {
+                PlayerPrefs.SetInt(WidthKey, displayModes[resolutionIndex].width);
+                PlayerPrefs.SetInt(HeightKey, displayModes[resolutionIndex].height);
+            }
+#endif
+            PlayerPrefs.Save();
+        }
+
+        void ApplyDisplay()
+        {
+            if (displayModes.Length == 0)
+            {
+                Screen.fullScreenMode = fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
+                return;
+            }
+            Resolution mode = displayModes[Mathf.Clamp(resolutionIndex, 0, displayModes.Length - 1)];
+            Screen.SetResolution(mode.width, mode.height, fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
+        }
+
+        void ToggleFullscreen()
+        {
+            fullscreen = !fullscreen;
+            ApplyDisplay();
+            SaveAudio();
+        }
+
+        void ShiftResolution(int direction)
+        {
+            if (displayModes.Length == 0 || direction == 0) return;
+            resolutionIndex = (resolutionIndex + direction) % displayModes.Length;
+            if (resolutionIndex < 0) resolutionIndex += displayModes.Length;
+            ApplyDisplay();
+            SaveAudio();
+        }
+
+        void OpenOptions()
+        {
+            optionsOpen = true;
+            keyboardEdit = false;
+            focusIndex = 0;
+            hover = -1;
+            if (displayModes.Length == 0) BuildResolutions(Screen.width, Screen.height);
+        }
+
+        void CloseOptions()
+        {
+            optionsOpen = false;
+            SaveAudio();
+            focusIndex = overlay == 1 ? 1 : 3;
+            hover = -1;
         }
 
         void StoreNames()
@@ -483,11 +626,13 @@ namespace Gamejam2026
             return -1;
         }
 
-        static int ItemCount(int id)
+        int ItemCount(int id)
         {
-            if (id == 0) return 4;
-            if (id < 0) return 0;
-            return 3;
+            if (optionsOpen && (id == 0 || id == 1)) return 6;
+            if (id == 0) return 5;
+            if (id == 1) return 4;
+            if (id == 2) return 3;
+            return 0;
         }
 
         void RefreshOverlay()
@@ -501,6 +646,7 @@ namespace Gamejam2026
             }
 
             overlay = next;
+            optionsOpen = false;
             StopEdit(true);
             hover = -1;
             if (next == 0)
@@ -523,7 +669,7 @@ namespace Gamejam2026
 
         void OnNameCharacter(char character)
         {
-            if (!keyboardEdit || overlay != 0 || focusIndex > 1 || char.IsControl(character)) return;
+            if (!keyboardEdit || optionsOpen || overlay != 0 || focusIndex > 1 || char.IsControl(character)) return;
             Keyboard keyboard = Keyboard.current;
             if (keyboard != null)
             {
@@ -546,14 +692,21 @@ namespace Gamejam2026
                 return;
             }
 
-            if (escape)
+            if (escape || EastDown())
             {
                 if (editing) { StopEdit(true); return; }
-                if (overlay == 1)
+                if (optionsOpen) { CloseOptions(); return; }
+                if (overlay == 1 && escape)
                 {
                     focusIndex = 0;
                     Queue(MenuCommand.Continue);
                 }
+                return;
+            }
+
+            if (SouthDown() && !editing && !NameSlot(focusIndex))
+            {
+                ActivateFocused();
                 return;
             }
 
@@ -606,20 +759,41 @@ namespace Gamejam2026
                 }
                 return;
             }
+            if (optionsOpen)
+            {
+                if (horizontal != 0) NudgeOption(horizontal);
+                if (vertical != 0) MoveFocus(vertical);
+                return;
+            }
             if (vertical != 0) MoveFocus(vertical);
+        }
+
+        void NudgeOption(int direction)
+        {
+            if (focusIndex >= 0 && focusIndex <= 2) SetOption(focusIndex, OptionValue(focusIndex) + direction * 0.05f);
+            else if (focusIndex == 4) ShiftResolution(direction);
         }
 
         void ActivateFocused()
         {
+            if (optionsOpen)
+            {
+                if (focusIndex == 3) ToggleFullscreen();
+                else if (focusIndex == 4) ShiftResolution(1);
+                else if (focusIndex == 5) CloseOptions();
+                return;
+            }
             if (overlay == 0)
             {
                 if (focusIndex == 2) Queue(MenuCommand.Begin);
-                else if (focusIndex == 3) Queue(MenuCommand.Quit);
+                else if (focusIndex == 3) OpenOptions();
+                else if (focusIndex == 4) Queue(MenuCommand.Quit);
             }
             else if (overlay == 1)
             {
                 if (focusIndex == 0) Queue(MenuCommand.Continue);
-                else if (focusIndex == 1) Queue(MenuCommand.MainMenu);
+                else if (focusIndex == 1) OpenOptions();
+                else if (focusIndex == 2) Queue(MenuCommand.MainMenu);
                 else Queue(MenuCommand.Quit);
             }
             else if (overlay == 2)
@@ -640,7 +814,7 @@ namespace Gamejam2026
 
         bool NameSlot(int index)
         {
-            return overlay == 0 && index >= 0 && index < 2;
+            return !optionsOpen && overlay == 0 && index >= 0 && index < 2;
         }
 
         string NameOf(int index)
@@ -741,6 +915,20 @@ namespace Gamejam2026
                 if (negative.isPressed) { direction = -1; held = true; }
                 if (positive.isPressed) { direction = 1; held = true; }
             }
+            foreach (Gamepad pad in Gamepad.all)
+            {
+                Vector2 stick = pad.leftStick.ReadValue();
+                if (horizontal)
+                {
+                    if (pad.dpad.left.isPressed || stick.x <= -0.75f) { direction = -1; held = true; }
+                    if (pad.dpad.right.isPressed || stick.x >= 0.75f) { direction = 1; held = true; }
+                }
+                else
+                {
+                    if (pad.dpad.up.isPressed || stick.y >= 0.75f) { direction = -1; held = true; }
+                    if (pad.dpad.down.isPressed || stick.y <= -0.75f) { direction = 1; held = true; }
+                }
+            }
             if (!held)
             {
                 if (horizontal) axisTimerX = 0f;
@@ -767,6 +955,20 @@ namespace Gamejam2026
             return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
         }
 
+        static bool SouthDown()
+        {
+            foreach (Gamepad pad in Gamepad.all)
+                if (pad.buttonSouth.wasPressedThisFrame) return true;
+            return false;
+        }
+
+        static bool EastDown()
+        {
+            foreach (Gamepad pad in Gamepad.all)
+                if (pad.buttonEast.wasPressedThisFrame) return true;
+            return false;
+        }
+
         float GuiScale => Screen.height <= 0 ? 1f : Mathf.Max(0.55f, Screen.height / 900f);
 
         Vector2 MouseGui(Vector2 screen)
@@ -790,9 +992,12 @@ namespace Gamejam2026
                 if (overlay >= 0)
                 {
                     LayoutOverlay(width, height);
+                    bool optionsBeforePointer = optionsOpen;
                     HandlePointer();
+                    if (optionsOpen != optionsBeforePointer) LayoutOverlay(width, height);
                     DrawBackdrop(width, height);
-                    if (overlay == 0) DrawTitle();
+                    if (optionsOpen) DrawOptions();
+                    else if (overlay == 0) DrawTitle();
                     else DrawSimple();
                 }
                 else DrawHud(width, height);
@@ -806,46 +1011,66 @@ namespace Gamejam2026
 
         void LayoutOverlay(float width, float height)
         {
-            float columnW = Mathf.Min(640f, width - 72f);
-            float x = (width - columnW) * 0.5f;
+            bool side = overlay == 0 && menuBackground != null;
+            float columnW = Mathf.Min(side ? 500f : 640f, width - (side ? 80f : 72f));
+            float x = side ? Mathf.Max(40f, width * 0.055f) : (width - columnW) * 0.5f;
             columnRect = new Rect(x, 0f, columnW, height);
-            if (overlay == 0) LayoutTitle(x, columnW, height);
+            if (optionsOpen) LayoutOptions(x, columnW, height);
+            else if (overlay == 0) LayoutTitle(x, columnW, height);
             else LayoutSimple(x, columnW, height);
         }
 
         void LayoutTitle(float x, float columnW, float height)
         {
-            float y = Mathf.Max(height * 0.055f + 18f, 36f);
-            titleRect = new Rect(x, y, columnW, 68f);
-            y += 78f;
-            briefRect = new Rect(x, y, columnW, 72f);
-            y += 86f;
-            hitCount = 4;
+            float y = Mathf.Max(height * 0.07f, 40f);
+            titleRect = new Rect(x, y, columnW, 64f);
+            y = titleRect.yMax + 16f;
+            briefRect = new Rect(x, y, columnW, 64f);
+            y = briefRect.yMax + 18f;
+            hitCount = 5;
             for (int i = 0; i < 2; i++)
             {
-                hits[i] = new Rect(x, y, columnW, 68f);
-                visuals[i] = new Rect(x + 16f, y + 22f, columnW - 16f, 46f);
-                y += 80f;
+                hits[i] = new Rect(x, y, columnW, 66f);
+                visuals[i] = new Rect(x + 16f, y + 22f, columnW - 16f, 44f);
+                y = hits[i].yMax + 12f;
             }
-            y += 16f;
-            hits[2] = visuals[2] = new Rect(x, y + 20f, columnW, 48f);
-            hits[3] = visuals[3] = new Rect(x, hits[2].yMax + 8f, columnW, 48f);
-            statusRect = new Rect(x, hits[3].yMax + 12f, columnW, 48f);
-            float helpTop = statusRect.yMax + 2f;
-            float helpBottom = height - height * 0.055f - 10f;
+            y += 8f;
+            hits[2] = visuals[2] = new Rect(x, y, columnW, 46f);
+            hits[3] = visuals[3] = new Rect(x, hits[2].yMax + 6f, columnW, 46f);
+            hits[4] = visuals[4] = new Rect(x, hits[3].yMax + 6f, columnW, 46f);
+            statusRect = new Rect(x, hits[4].yMax + 14f, columnW, 36f);
+            float helpTop = statusRect.yMax + 4f;
+            float helpBottom = height - 28f;
             helpRect = new Rect(x, helpTop, columnW, Mathf.Max(48f, helpBottom - helpTop));
+        }
+
+        void LayoutOptions(float x, float columnW, float height)
+        {
+            float y = Mathf.Max(height * 0.08f, 48f);
+            titleRect = new Rect(x, y, columnW, 64f);
+            y = titleRect.yMax + 28f;
+            hitCount = 6;
+            for (int i = 0; i < 5; i++)
+            {
+                hits[i] = visuals[i] = new Rect(x, y, columnW, 42f);
+                y += 50f;
+            }
+            hits[5] = visuals[5] = new Rect(x, y + 10f, columnW, 46f);
+            helpRect = new Rect(x, hits[5].yMax + 16f, columnW, 72f);
+            statusRect = helpRect;
         }
 
         void LayoutSimple(float x, float columnW, float height)
         {
-            const float block = 470f;
+            int count = overlay == 1 ? 4 : 3;
+            const float block = 520f;
             float y = Mathf.Max(height * 0.055f + 18f, (height - block) * 0.4f);
             titleRect = new Rect(x, y, columnW, 72f);
             y += 88f;
             briefRect = new Rect(x, y, columnW, 78f);
             y += 96f;
-            hitCount = 3;
-            for (int i = 0; i < 3; i++)
+            hitCount = count;
+            for (int i = 0; i < count; i++)
             {
                 hits[i] = visuals[i] = new Rect(x, y, columnW, 48f);
                 y += 56f;
@@ -863,6 +1088,9 @@ namespace Gamejam2026
             for (int i = 0; i < hitCount; i++)
                 if (hits[i].Contains(gui)) hover = i;
 
+            if (optionsOpen && hover >= 0 && hover <= 2 && mouse.leftButton.isPressed)
+                SetOption(hover, SliderAmount(hits[hover], gui.x));
+
             if (!mouse.leftButton.wasPressedThisFrame || pointerFrame == Time.frameCount) return;
             pointerFrame = Time.frameCount;
             if (hover < 0)
@@ -872,6 +1100,11 @@ namespace Gamejam2026
             }
 
             focusIndex = hover;
+            if (optionsOpen && hover <= 2)
+            {
+                SetOption(hover, SliderAmount(hits[hover], gui.x));
+                return;
+            }
             if (NameSlot(hover))
             {
                 if (keyboardEdit) SaveNames();
@@ -901,23 +1134,64 @@ namespace Gamejam2026
 
         void DrawBackdrop(float width, float height)
         {
-            Color backdrop = finished && won ? new Color(Wash.r, Wash.g, Wash.b, 0.45f) : Wash;
-            if (finished && !won && atmosphere) backdrop.a = Mathf.Lerp(0.15f, Wash.a, atmosphere.Blackout);
-            Box(new Rect(0f, 0f, width, height), backdrop);
-            if (vignette) GUI.DrawTexture(new Rect(0f, 0f, width, height), vignette, ScaleMode.StretchToFill, true);
+            bool photo = overlay == 0 && menuBackground != null;
+            if (photo)
+            {
+                DrawCover(menuBackground, width, height);
+                Box(new Rect(0f, 0f, columnRect.xMax + 48f, height), new Color(0f, 0f, 0f, 0.62f));
+            }
+            else
+            {
+                Color backdrop = finished && won ? new Color(Wash.r, Wash.g, Wash.b, 0.45f) : Wash;
+                if (finished && !won && atmosphere) backdrop.a = Mathf.Lerp(0.15f, Wash.a, atmosphere.Blackout);
+                Box(new Rect(0f, 0f, width, height), backdrop);
+                if (vignette) GUI.DrawTexture(new Rect(0f, 0f, width, height), vignette, ScaleMode.StretchToFill, true);
+                Box(new Rect(columnRect.x - 40f, 0f, columnRect.width + 80f, height), new Color(0f, 0f, 0f, 0.5f));
+            }
             if (grain)
             {
                 Color previous = GUI.color;
-                GUI.color = new Color(1f, 1f, 1f, 0.16f);
+                GUI.color = new Color(1f, 1f, 1f, photo ? 0.08f : 0.16f);
                 float tilesX = Mathf.Max(1f, width / 180f);
                 float tilesY = Mathf.Max(1f, height / 180f);
                 GUI.DrawTextureWithTexCoords(new Rect(0f, 0f, width, height), grain, new Rect(0f, 0f, tilesX, tilesY));
                 GUI.color = previous;
             }
-            Box(new Rect(columnRect.x - 40f, 0f, columnRect.width + 80f, height), new Color(0f, 0f, 0f, 0.5f));
-            float bar = height * 0.055f;
-            Box(new Rect(0f, 0f, width, bar), Color.black);
-            Box(new Rect(0f, height - bar, width, bar), Color.black);
+            if (!photo)
+            {
+                float bar = height * 0.055f;
+                Box(new Rect(0f, 0f, width, bar), Color.black);
+                Box(new Rect(0f, height - bar, width, bar), Color.black);
+            }
+        }
+
+        static void DrawCover(Texture2D texture, float width, float height)
+        {
+            float image = texture.width / (float)texture.height;
+            float screen = width / Mathf.Max(1f, height);
+            Rect uv = new Rect(0f, 0f, 1f, 1f);
+            if (screen > image)
+            {
+                float visible = image / screen;
+                uv = new Rect(0f, (1f - visible) * 0.5f, 1f, visible);
+            }
+            else if (image > 0f)
+            {
+                float visible = screen / image;
+                uv = new Rect(1f - visible, 0f, visible, 1f);
+            }
+            GUI.DrawTextureWithTexCoords(new Rect(0f, 0f, width, height), texture, uv);
+        }
+
+        static Rect SliderBar(Rect row)
+        {
+            return new Rect(row.x + 168f, row.y + row.height * 0.5f - 3f, Mathf.Max(40f, row.width - 230f), 6f);
+        }
+
+        static float SliderAmount(Rect row, float mouseX)
+        {
+            Rect bar = SliderBar(row);
+            return Mathf.InverseLerp(bar.x, bar.xMax, mouseX);
         }
 
         void DrawTitle()
@@ -929,9 +1203,43 @@ namespace Gamejam2026
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
             DrawChoice(hits[2], "INICIAR EXPEDICIÓN", 2, false, false, false);
-            DrawChoice(hits[3], "SALIR", 3, false, false, false);
+            DrawChoice(hits[3], "OPCIONES", 3, false, false, false);
+            DrawChoice(hits[4], "SALIR", 4, false, false, false);
             Label(statusRect, "Dos jugadores en un teclado compartido.", smallStyle, Ash);
             Label(helpRect, HelpText(), smallStyle, Ash);
+        }
+
+        void DrawOptions()
+        {
+            DrawTracked(titleRect, "Opciones", glyphStyle, 6f, Paper);
+            Rule(titleRect.x + 84f, titleRect.yMax + 6f, 140f);
+            Box(new Rect(titleRect.x, titleRect.yMax + 6f, 28f, 1f), Accent);
+            DrawSlider(0, "GENERAL");
+            DrawSlider(1, "AMBIENTE");
+            DrawSlider(2, "EFECTOS");
+            DrawChoice(hits[3], "PANTALLA COMPLETA    " + (fullscreen ? "SÍ" : "NO"), 3, false, false, false);
+            string resolution = displayModes.Length == 0
+                ? Screen.width + " × " + Screen.height
+                : displayModes[resolutionIndex].width + " × " + displayModes[resolutionIndex].height;
+            DrawChoice(hits[4], "RESOLUCIÓN    " + resolution, 4, displayModes.Length == 0, false, false);
+            DrawChoice(hits[5], "VOLVER", 5, false, false, false);
+            Label(helpRect, "En los volúmenes y la resolución, izquierda y derecha cambian el valor. Enter o A confirman. Esc o B regresan.", smallStyle, Ash);
+        }
+
+        void DrawSlider(int index, string label)
+        {
+            Rect row = hits[index];
+            bool focused = focusIndex == index;
+            bool over = hover == index && !focused;
+            Color ink = focused ? Paper : over ? Idle : Ash;
+            if (focused) Box(new Rect(row.x, row.y + row.height * 0.5f - 1f, 11f, 2f), Accent);
+            Label(new Rect(row.x + 18f, row.y, 140f, row.height), label, optionStyle, ink);
+            Rect bar = SliderBar(row);
+            Box(bar, new Color(0.16f, 0.14f, 0.12f, 0.95f));
+            float value = OptionValue(index);
+            Box(new Rect(bar.x, bar.y, bar.width * value, bar.height), focused ? Paper : Idle);
+            if (focused) Box(new Rect(bar.x + bar.width * value - 1f, bar.y - 3f, 2f, bar.height + 6f), Accent);
+            Label(new Rect(bar.xMax + 8f, row.y, 56f, row.height), Mathf.RoundToInt(value * 100f) + "%", optionStyle, ink);
         }
 
         void DrawSimple()
@@ -945,8 +1253,9 @@ namespace Gamejam2026
             if (overlay == 1)
             {
                 DrawChoice(hits[0], "CONTINUAR", 0, false, false, false);
-                DrawChoice(hits[1], "VOLVER AL MENÚ", 1, false, false, false);
-                DrawChoice(hits[2], "SALIR", 2, false, false, false);
+                DrawChoice(hits[1], "OPCIONES", 1, false, false, false);
+                DrawChoice(hits[2], "VOLVER AL MENÚ", 2, false, false, false);
+                DrawChoice(hits[3], "SALIR", 3, false, false, false);
                 Label(statusRect, "La partida sigue detenida.", smallStyle, Ash);
             }
             else
@@ -987,7 +1296,7 @@ namespace Gamejam2026
             bool focused = focusIndex == index;
             bool over = hover == index && !focused;
             Color ink = disabled ? DisabledInk : focused ? Paper : over ? Idle : Ash;
-            if (focused) Box(new Rect(hit.x, hit.y + hit.height * 0.5f - 1f, 11f, 2f), ink);
+            if (focused) Box(new Rect(hit.x, hit.y + hit.height * 0.5f - 1f, 11f, 2f), Accent);
             float textX = hit.x + 18f;
             if (marked)
             {
@@ -1060,12 +1369,14 @@ namespace Gamejam2026
 
         string HelpText()
         {
+            if (optionsOpen)
+                return "Flechas, stick o ratón. Esc o B vuelven.\n" + GameplayHelp;
             if (overlay == 0 && keyboardEdit)
                 return "Escribiendo. Enter confirma el nombre. Esc sale del campo. Ctrl+V pega.\n" + GameplayHelp;
             if (overlay == 0)
-                return "Flechas o Tab para elegir. Enter confirma o edita un nombre. También puedes usar el ratón.\n" + GameplayHelp;
+                return "Flechas, stick o ratón para elegir. Enter o A confirman. En un nombre, Enter escribe.\n" + GameplayHelp;
             if (overlay == 1)
-                return "Esc o Continuar reanudan. Volver al menú abandona esta expedición.\n" + GameplayHelp;
+                return "Esc o Continuar reanudan. Opciones cambia el volumen sin abandonar la expedición.\n" + GameplayHelp;
             return "R o Volver a intentar empieza otra expedición con los mismos nombres. Volver al menú regresa a los nombres.\n" + GameplayHelp;
         }
 

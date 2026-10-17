@@ -12,18 +12,6 @@ using UnityEngine.InputSystem.LowLevel;
 
 public static class JamPlayCheck
 {
-    static void PlaceCrank(DemoGame game, DemoPlayer player, DemoMechanism target)
-    {
-        if (target.HasCrank) return;
-        foreach (var mechanism in game.mechanisms)
-        {
-            if (!mechanism.HasCrank) continue;
-            mechanism.DetachCrank(player);
-            break;
-        }
-        target.Use(player);
-    }
-
     [MenuItem("Gamejam/Comprobar pulido en Play")]
     public static void Run()
     {
@@ -212,6 +200,18 @@ public class JamPlayProbe : MonoBehaviour
         yield return null;
         Require(game.candles.Skip(1).All(c => !c.gameObject.activeSelf && !c.candleLight.enabled), "segunda vela permanece apagada tras finales");
         File.AppendAllText("Temp/JamPlayCheck.txt", "ALL_PASSED\n");
+    }
+
+    static void PlaceCrank(DemoGame game, DemoPlayer player, DemoMechanism target)
+    {
+        if (target.HasCrank) return;
+        foreach (var mechanism in game.mechanisms)
+        {
+            if (!mechanism.HasCrank) continue;
+            mechanism.DetachCrank(player);
+            break;
+        }
+        target.Use(player);
     }
 
     static void Position(DemoPlayer player, Vector3 position, Vector3 lookAt)
