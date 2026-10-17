@@ -70,7 +70,7 @@ public static class JamPolish
             }
         }
         atmosphere.victoryLights = lightsRoot.GetComponentsInChildren<Light>();
-        var clue = UnityEngine.Object.FindAnyObjectByType<DemoClue>();
+        var clue = UnityEngine.Object.FindObjectsByType<DemoClue>().First(c => !c.nextSymbolOnly);
         clue.inscriptionLabel = UnityEngine.Object.FindObjectsByType<TextMesh>().FirstOrDefault(t => t.name.StartsWith("Cartel LEE"));
         if (clue.inscriptionLabel)
         {

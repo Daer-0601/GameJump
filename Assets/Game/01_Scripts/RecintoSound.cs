@@ -17,15 +17,10 @@ namespace Gamejam2026
         float next, target, pan, probe;
         int previous = -1;
 
-        void LateUpdate()
-        {
-            if (!mixBackground || !game || !game.ambience) return;
-            float level = Mathf.Lerp(0.035f, 0.075f, game.Danger / 100f);
-            game.ambience.volume = game.Playing ? level : 0.025f;
-        }
-
         void Start()
         {
+            // DemoGame owns the main ambience mix. The old marker must not overwrite it.
+            if (mixBackground) return;
             source = gameObject.AddComponent<AudioSource>();
             source.playOnAwake = false;
             source.spatialBlend = 0;
@@ -73,8 +68,12 @@ namespace Gamejam2026
                     Vector3 direction = transform.position - ear;
                     pan = Mathf.Clamp(Vector3.Dot(closest.view.transform.right, direction.normalized), -0.65f, 0.65f);
                     // las paredes amortiguan los sonidos del otro lado
-                    if (Physics.Raycast(ear, direction.normalized, out var hit, direction.magnitude, ~0, QueryTriggerInteraction.Ignore)
-                        && !hit.collider.GetComponentInParent<DemoPlayer>() && !hit.collider.GetComponentInParent<CarryObject>()) target *= 0.28f;
+                    foreach (var hit in Physics.RaycastAll(ear, direction.normalized, direction.magnitude, ~0, QueryTriggerInteraction.Ignore))
+                    {
+                        if (hit.collider.GetComponentInParent<DemoPlayer>() || hit.collider.GetComponentInParent<CarryObject>()) continue;
+                        target *= 0.5f;
+                        break;
+                    }
                 }
             }
             source.volume = Mathf.MoveTowards(source.volume, target, Time.deltaTime * 0.2f);

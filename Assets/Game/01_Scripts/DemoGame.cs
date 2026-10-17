@@ -36,11 +36,17 @@ namespace Gamejam2026
         public float destabilizeMin = 38f;
         public float destabilizeMax = 52f;
         public bool Playing => started && !paused && !finished;
+        public bool Finished => finished;
         public bool PlayerInputEnabled => Playing && Time.frameCount > inputResumeFrame;
         public float Danger { get; private set; }
         public float Disturbance => Mathf.Clamp01((disturbanceUntil - elapsed) / 1.4f);
         public string SequenceText => "ORDEN: " + mechanisms[order[0]].symbol + " > " + mechanisms[order[1]].symbol + " > " + mechanisms[order[2]].symbol;
         public float progress => completed / 3f;
+        public int CompletedCount => completed;
+        public float ElapsedSeconds => elapsed;
+        public string NextSymbol => completed < order.Length ? mechanisms[order[completed]].symbol : string.Empty;
+        public event Action<DemoMechanism> FirstMechanismCompleted;
+        public event Action<bool> RoundFinished;
 
         int[] order = { 0, 1, 2 };
         int completed;
@@ -248,6 +254,7 @@ namespace Gamejam2026
             }
             mechanism.done = true;
             completed++;
+            if (completed == 1) FirstMechanismCompleted?.Invoke(mechanism);
             if (nextDestabilize < 0f) ScheduleDestabilize();
             PlaySfx(gearsClip);
             PlaySfx(lightClip);
@@ -358,6 +365,7 @@ namespace Gamejam2026
             if (!success) PlaySfx(jumpScareClip);
             Time.timeScale = 0f;
             LockPointer();
+            RoundFinished?.Invoke(success);
         }
 
         void PlaySfx(AudioClip clip)
@@ -368,7 +376,7 @@ namespace Gamejam2026
         public void PlayFootstep(AudioSource source)
         {
             var surfaces = GetComponent<RecintoFootsteps>();
-            if (surfaces && source) { surfaces.Play(source, sfxVolume); return; }
+            if (surfaces && source && surfaces.Play(source, sfxVolume)) return;
             if (walkingClip && source) source.PlayOneShot(walkingClip, sfxVolume);
         }
 

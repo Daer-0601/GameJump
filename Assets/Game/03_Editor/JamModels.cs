@@ -103,7 +103,7 @@ public static class JamModels
     }
 
     // Rings are (height, radius X, radius Z). Duplicate vertices per face for faceted normals.
-    static Mesh Loft(string name, Vector3[] rings, int sides = 8)
+    public static Mesh Loft(string name, Vector3[] rings, int sides = 8)
     {
         string path = Folder + "/" + name + ".asset";
         var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);

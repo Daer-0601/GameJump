@@ -47,10 +47,14 @@ namespace Gamejam2026
 
         void Update()
         {
-            if (readingClue && !readingClue.CanRead(game))
+            if (readingClue)
             {
-                MessageUntil = 0f;
-                readingClue = null;
+                if (!readingClue.TryRead(game, out string text))
+                {
+                    MessageUntil = 0f;
+                    readingClue = null;
+                }
+                else Message = text;
             }
             if (!game || !game.PlayerInputEnabled) return;
             var input = DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime);
@@ -121,10 +125,11 @@ namespace Gamejam2026
                 else if (clue != null)
                 {
                     bool readable = clue.CanRead(game);
-                    Hint = readable ? "Leer la inscripción" : "Acerca la vela para leer";
-                    if (use && readable)
+                    Hint = readable ? (clue.nextSymbolOnly ? "Leer siguiente símbolo" : "Leer la inscripción") : "Acerca la vela para leer";
+                    if (clue.nextSymbolOnly && readable && string.IsNullOrEmpty(game.NextSymbol)) Hint = "No quedan símbolos pendientes";
+                    if (use && clue.TryRead(game, out string text))
                     {
-                        Tell(game.SequenceText, 10f);
+                        Tell(text, 10f);
                         readingClue = clue;
                     }
                 }

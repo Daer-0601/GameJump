@@ -5,6 +5,8 @@ namespace Gamejam2026
     public class DemoClue : MonoBehaviour
     {
         public TextMesh inscriptionLabel;
+        [Tooltip("Muestra únicamente el próximo símbolo pendiente, sin revelar el resto del orden.")]
+        public bool nextSymbolOnly;
         DemoGame game;
         Renderer labelRenderer;
 
@@ -16,11 +18,27 @@ namespace Gamejam2026
 
         void Update()
         {
-            if (labelRenderer && game) labelRenderer.enabled = CanRead(game);
+            if (!labelRenderer || !game) return;
+            if (nextSymbolOnly)
+            {
+                bool readable = TryRead(game, out string text);
+                inscriptionLabel.text = text;
+                labelRenderer.enabled = readable;
+            }
+            else labelRenderer.enabled = CanRead(game);
+        }
+
+        public bool TryRead(DemoGame owner, out string text)
+        {
+            text = string.Empty;
+            if (!CanRead(owner)) return false;
+            text = nextSymbolOnly ? owner.NextSymbol : owner.SequenceText;
+            return !string.IsNullOrEmpty(text);
         }
 
         public bool CanRead(DemoGame game)
         {
+            if (!game || game.candles == null) return false;
             foreach (var candle in game.candles)
             {
                 if (!candle || !candle.gameObject.activeInHierarchy || !candle.candleLight || !candle.candleLight.enabled) continue;

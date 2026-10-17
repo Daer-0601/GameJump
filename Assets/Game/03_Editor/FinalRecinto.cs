@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System;
 using System.IO;
 using System.Linq;
@@ -70,15 +71,15 @@ public static class FinalRecinto
             light.shadowBias = 0.015f;
             light.shadowNormalBias = 0.1f;
             ShadowTier(light, 0);
-            light.intensity = 0.7f;
-            light.range = 5.5f;
+            light.intensity = 0.08f;
+            light.range = 2.8f;
             var existingBulb = light.transform.Find("Difusor de farol");
             var bulb = existingBulb ? existingBulb.gameObject : GameObject.CreatePrimitive(PrimitiveType.Cube);
             bulb.name = "Difusor de farol";
             bulb.transform.SetParent(light.transform, false);
             bulb.transform.localScale = new Vector3(0.22f, 0.12f, 0.16f);
             if (bulb.GetComponent<Collider>()) Object.DestroyImmediate(bulb.GetComponent<Collider>());
-            bulb.GetComponent<Renderer>().sharedMaterial = JamPolish.GetMaterial("Farol tenue", new Color(0.65f, 0.32f, 0.08f), true);
+            bulb.GetComponent<Renderer>().sharedMaterial = JamPolish.GetMaterial("Farol guia oscuro", new Color(0.16f, 0.075f, 0.025f), true);
         }
         game.atmosphereLights = Array.Empty<Light>();
         var victory = GameObject.Find("Luces blancas de victoria");
@@ -96,6 +97,8 @@ public static class FinalRecinto
             light.shadows = LightShadows.None;
         }
         game.GetComponent<DemoAtmosphere>().victoryLights = victory.GetComponentsInChildren<Light>();
+        game.GetComponent<DemoAtmosphere>().navigationLights = map.GetComponentsInChildren<Light>();
+        EditorUtility.SetDirty(game.GetComponent<DemoAtmosphere>());
         foreach (var candle in game.candles)
         {
             if (!candle.candleLight) continue;
@@ -256,3 +259,4 @@ public static class FinalRecinto
         if (sound.clips.Any(c => !c)) throw new Exception("falta audio " + name);
     }
 }
+#endif

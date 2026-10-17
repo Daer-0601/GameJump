@@ -30,6 +30,10 @@ Adaptaciones: conversión de Blender a FBX, escala y materiales URP. Se conserva
   Licencia de estas mallas y materiales originales: **CC0 1.0 Universal**; se dedican al dominio público bajo https://creativecommons.org/publicdomain/zero/1.0/ . Esta dedicación se limita a la geometría y materiales nuevos, no modifica las licencias de otros recursos.
   Animación: balanceo y piernas mediante transformaciones de código en `DemoMotion.cs`; inserción visual de la manivela en `CarryObject.cs`.
 
+El paso y segundo cartel de Daer usan geometría original simple generada en [DaerSetup.cs](Assets/Game/03_Editor/DaerSetup.cs), con asistencia de Codex, guardada en `Assets/Game/06_Daer/Meshes`. Esta geometría propia se dedica igualmente a CC0 1.0 Universal. Reutiliza los materiales existentes del taller; no añade texturas, modelos descargados ni audio externo.
+
+El detalle adicional de trajes, visores, respiradores, guantes, cera y manivela es geometría original del proyecto, creada proceduralmente con asistencia de Codex en [JamDetails.cs](Assets/Game/03_Editor/JamDetails.cs). Fuente local: ese archivo y `JamModels.cs`; no existe URL externa. Mallas y materiales `Assets/Game/02_Polish/Rec_*`: **CC0 1.0 Universal**, https://creativecommons.org/publicdomain/zero/1.0/ . Las animaciones por transformaciones están en `DemoMotion.cs`, `DemoCandleFlame.cs` y `CarryObject.cs`.
+
 ## Audio
 
 - **voice in the woods**, de **madmakingmistery**.
@@ -37,6 +41,8 @@ Adaptaciones: conversión de Blender a FBX, escala y materiales URP. Se conserva
   Licencia declarada: CC0 1.0 Universal.
 
 Se conservan los clips existentes de `Assets/Game/04_Audio`: ambiente, pasos, luz, engranaje, alarma y susto. El loop de desajuste reutiliza un fragmento del engranaje y el aviso de error un fragmento de la alarma, generados en memoria; no se incorporó ni se atribuye una licencia nueva a esos archivos de audio.
+
+Los sonidos localizados y bancos de pasos que ya incorporó el mapa nuevo conservan las fuentes y condiciones documentadas en [FUENTES.md](Assets/External/AudioFinal/FUENTES.md). Este pulido ajusta su mezcla y recuperación, sin descargar ni sustituir clips.
 
 ## Licencia CC0
 

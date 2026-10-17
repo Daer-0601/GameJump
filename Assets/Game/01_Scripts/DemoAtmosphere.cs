@@ -8,6 +8,7 @@ namespace Gamejam2026
     public class DemoAtmosphere : MonoBehaviour
     {
         public Light[] victoryLights;
+        public Light[] navigationLights;
         DemoGame game;
         Volume volume;
         VolumeProfile profile;
@@ -25,12 +26,17 @@ namespace Gamejam2026
         {
             game = owner;
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.008f, 0.011f, 0.018f);
+            RenderSettings.ambientLight = new Color(0.003f, 0.0045f, 0.007f);
             RenderSettings.reflectionIntensity = 0f;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogColor = new Color(0.004f, 0.006f, 0.009f);
             foreach (var light in game.atmosphereLights) if (light) light.intensity = 0f;
+            foreach (var light in FindObjectsByType<Light>())
+                if (light.type == LightType.Directional) light.intensity = 0f;
+            if (navigationLights != null)
+                foreach (var light in navigationLights)
+                    if (light) { light.intensity = 0.08f; light.range = 2.8f; }
             if (victoryLights != null) foreach (var light in victoryLights) if (light) light.intensity = 0f;
             foreach (var player in game.players)
             {
@@ -38,7 +44,7 @@ namespace Gamejam2026
                 cameraData.renderPostProcessing = true;
                 cameraData.volumeTrigger = player.view.transform;
                 player.view.backgroundColor = new Color(0.004f, 0.006f, 0.012f);
-                player.view.clearFlags = CameraClearFlags.Skybox;
+                player.view.clearFlags = CameraClearFlags.SolidColor;
             }
             volume = gameObject.AddComponent<Volume>();
             volume.isGlobal = true;
@@ -80,7 +86,7 @@ namespace Gamejam2026
             float danger = game.Danger / 100f;
             float disturbance = game.Playing ? game.Disturbance : 0f;
             float relief = victory ? Mathf.Clamp01(ending / 1.5f) : 0f;
-            RenderSettings.fogDensity = Mathf.Lerp(Mathf.Lerp(0.012f, 0.025f, danger), 0.008f, relief);
+            RenderSettings.fogDensity = Mathf.Lerp(Mathf.Lerp(0.03f, 0.06f, danger), 0.012f, relief);
             vignette.intensity.Override(Mathf.Lerp(0.22f + danger * 0.18f + shock * 0.13f + disturbance * 0.035f, 0.12f, relief));
             grain.intensity.Override(Mathf.Lerp(0.12f + danger * 0.22f, 0.04f, relief));
             aberration.intensity.Override(Mathf.Lerp(0.015f + danger * 0.055f + shock * 0.06f, 0f, relief));
@@ -95,8 +101,8 @@ namespace Gamejam2026
                 // Never enable a light here: the spare candle and a lost game's flame stay off.
                 if (!candle || !candle.gameObject.activeInHierarchy || !candle.candleLight || !candle.candleLight.enabled) continue;
                 float noise = Mathf.PerlinNoise(Time.time * 3.2f, 7.3f);
-                candle.candleLight.intensity = Mathf.Lerp(6.2f, 7.4f, noise);
-                candle.candleLight.range = 7f;
+                candle.candleLight.intensity = Mathf.Lerp(4.4f, 5.5f, noise);
+                candle.candleLight.range = 5.8f;
                 candle.candleLight.color = new Color(1f, 0.65f, 0.30f);
             }
         }
