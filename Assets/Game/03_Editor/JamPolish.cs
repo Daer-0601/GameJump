@@ -118,8 +118,8 @@ public static class JamPolish
     public static void Routes()
     {
         var game = OpenGame();
-        game.dangerPerSecond = 0.31f;
-        game.darknessPenalty = 0.6f;
+        game.dangerPerSecond = 0.04f;
+        game.darknessPenalty = 0.03f;
         game.errorPenalty = 12f;
         game.successRelief = 10f;
         game.unstablePenalty = 1.25f;

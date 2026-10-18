@@ -124,7 +124,7 @@ public class DaerPlayProbe : MonoBehaviour
             Require(game.Playing && game.players.Length == 2 && game.players[0].Held.isCandle && !game.players[1].Held.isCandle, "inicio sin mando, vela y manivela: " + string.Join("", order));
             Require(!passage.OpenRequested && !passage.IsOpen && passage.blocker.enabled, "compuerta reiniciada y cerrada");
             Require(game.candles.Skip(1).All(c => !c.gameObject.activeSelf && !c.candleLight.enabled), "vela de reserva sigue apagada");
-            Require(game.dangerPerSecond == .31f && game.darknessPenalty == .6f && game.errorPenalty == 12f && game.successRelief == 10f && game.unstablePenalty == 1.25f && game.stabilizeRelief == 8f && game.destabilizeMin == 38f && game.destabilizeMax == 52f, "valores de dificultad actuales conservados");
+            Require(Mathf.Approximately(game.dangerPerSecond, 0.04f) && Mathf.Approximately(game.darknessPenalty, 0.03f) && game.errorPenalty == 12f && game.successRelief == 10f && game.unstablePenalty == 1.25f && game.stabilizeRelief == 8f && game.destabilizeMin == 38f && game.destabilizeMax == 52f, "valores de dificultad actuales conservados");
 
             var worker = game.players[1];
             var candle = game.candles[0];
