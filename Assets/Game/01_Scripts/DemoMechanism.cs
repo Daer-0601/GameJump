@@ -16,12 +16,25 @@ namespace Gamejam2026
         public bool HasCrank => mountedCrank != null;
         public Material sparkMaterial;
         public float Hold01 => stabilizeTime <= 0f ? 0f : Mathf.Clamp01(stabilizeProgress / stabilizeTime);
+        public float Cooperation01 => CooperationSeconds <= 0f ? 0f : Mathf.Clamp01(cooperation / CooperationSeconds);
+        public Transform BracePoint => bracePoint;
+        public const float CooperationSeconds = 2f;
         const float stabilizeTime = 1.5f;
+        const float TapSeconds = 0.22f;
         Quaternion startRotation;
         Quaternion socketStartRotation;
         float stabilizeProgress;
+        float cooperation;
         bool heldThisFrame;
         int lastHoldFrame = -1;
+        int braceFrame = -1;
+        int operateFrame = -1;
+        bool braceHeld;
+        bool operateHeld;
+        bool lightsTold;
+        Transform bracePoint;
+        DemoPlayer bracer;
+        DemoPlayer operatorPlayer;
         ParticleSystem sparks;
         AudioSource rattle;
         AudioClip loopClip;
@@ -46,6 +59,49 @@ namespace Gamejam2026
                 }
             }
             socketStartRotation = crankSocket.localRotation;
+            EnsureBrace();
+        }
+
+        void EnsureBrace()
+        {
+            var existing = transform.Find("Punto de apoyo");
+            if (!existing)
+            {
+                var point = new GameObject("Punto de apoyo");
+                point.transform.SetParent(transform, false);
+                // Outside the front casing, on the right, so the partner can stand beside the crank.
+                point.transform.localPosition = new Vector3(0.92f, 1.05f, -0.2f);
+                var box = point.AddComponent<BoxCollider>();
+                box.size = new Vector3(0.36f, 0.46f, 0.36f);
+                var grip = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                grip.name = "Asa";
+                grip.transform.SetParent(point.transform, false);
+                grip.transform.localScale = new Vector3(0.07f, 0.18f, 0.07f);
+                Destroy(grip.GetComponent<Collider>());
+                var donor = GetComponentInChildren<Renderer>();
+                if (donor && donor.sharedMaterial) grip.GetComponent<Renderer>().sharedMaterial = donor.sharedMaterial;
+                var plate = new GameObject("Rótulo del asa");
+                plate.transform.SetParent(point.transform, false);
+                plate.transform.localPosition = new Vector3(0f, 0.32f, -0.12f);
+                plate.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                var text = plate.AddComponent<TextMesh>();
+                text.text = "ASA";
+                text.anchor = TextAnchor.MiddleCenter;
+                text.alignment = TextAlignment.Center;
+                text.characterSize = 0.045f;
+                text.fontSize = 48;
+                text.color = new Color(0.86f, 0.8f, 0.66f);
+                existing = point.transform;
+            }
+            bracePoint = existing;
+        }
+
+        public bool IsBraceAim(RaycastHit hit)
+        {
+            if (bracePoint && hit.collider && hit.collider.transform.IsChildOf(bracePoint)) return true;
+            if (!bracePoint) return false;
+            Vector3 crank = crankSocket ? crankSocket.position : transform.position;
+            return Vector3.Distance(hit.point, bracePoint.position) + 0.08f < Vector3.Distance(hit.point, crank);
         }
 
         void Start()
@@ -113,6 +169,14 @@ namespace Gamejam2026
             if (!done && !HasCrank && player.Held && !player.Held.isCandle && game.Investigation && !game.Investigation.Contrasted)
                 return useKey + "Colocar SIN CONTRASTE: error (+12%). Busquen primero la consola";
 
+            if (HasCrank && !done)
+            {
+                if (player.Held && player.Held.isCandle)
+                    return useKey + "Mantener para accionar " + symbol + ". Puedes conservar la vela.";
+                if (player.Held == null)
+                    return useKey + "Mantener para accionar " + symbol + ". Pulsación corta retira la manivela.";
+            }
+
             if (HasCrank)
             {
                 if (player.Held == null)
@@ -143,13 +207,69 @@ namespace Gamejam2026
             {
                 player.Held = null;
             }
-            if (!done)
+            if (player != null)
             {
-                game.Activate(this, player);
+                player.Tell(done
+                    ? "Manivela colocada en el soporte " + symbol + "."
+                    : "Manivela en " + symbol + ". Uno sujeta el asa y el otro mantiene el giro.", 6f);
             }
-            else if (player != null) player.Tell("Manivela colocada en el soporte " + symbol + ".");
             return true;
         }
+
+        public bool CanTakeRole(DemoPlayer player)
+        {
+            return player && game && game.PlayerInputEnabled && !done && !unstable && HasCrank
+                && mountedCrank && !mountedCrank.Inserting
+                && (player.Held == null || player.Held.isCandle);
+        }
+
+        public string BraceHint(DemoPlayer player)
+        {
+            if (player == null) return string.Empty;
+            string key = "[" + DemoPlayerInput.UseLabel(player.playerIndex) + "] ";
+            if (!HasCrank) return "Primero coloquen la manivela. El asa solo sujeta durante el giro.";
+            if (player.Held && !player.Held.isCandle) return "Suelta la manivela en el soporte antes de sujetar el asa.";
+            if (done) return "Mecanismo completado";
+            if (unstable) return GetHint(player);
+            int percent = Mathf.RoundToInt(Cooperation01 * 100f);
+            string contrast = UncontrastedWarning();
+            if (!operateHeld)
+                return key + "Mantener para sujetar " + symbol + ". Falta compañero: alguien debe accionar la manivela. No suma peligro." + contrast;
+            return key + "Sujetando " + symbol + "  " + percent + "%. Mantén hasta completar el giro." + contrast;
+        }
+
+        public string OperateHint(DemoPlayer player)
+        {
+            if (player == null) return string.Empty;
+            string key = "[" + DemoPlayerInput.UseLabel(player.playerIndex) + "] ";
+            int percent = Mathf.RoundToInt(Cooperation01 * 100f);
+            string contrast = UncontrastedWarning();
+            if (!braceHeld)
+                return key + "Mantener para accionar " + symbol + "  " + percent + "%. Falta compañero: alguien debe sujetar el asa. No suma peligro." + contrast;
+            return key + "Accionando " + symbol + "  " + percent + "%. Mantén junto al asa." + contrast;
+        }
+
+        string UncontrastedWarning()
+        {
+            if (!game || !game.Investigation || game.Investigation.Contrasted) return string.Empty;
+            return " Datos sin contrastar: terminarlo será un error (+12%).";
+        }
+
+        public void Brace(DemoPlayer player, bool holding)
+        {
+            if (!holding || !CanTakeRole(player)) return;
+            braceFrame = Time.frameCount;
+            bracer = player;
+        }
+
+        public void Operate(DemoPlayer player, bool holding)
+        {
+            if (!holding || !CanTakeRole(player)) return;
+            operateFrame = Time.frameCount;
+            operatorPlayer = player;
+        }
+
+        public static bool IsShortCrankTap(float heldSeconds) => heldSeconds > 0f && heldSeconds < TapSeconds;
 
         public bool DetachCrank(DemoPlayer player)
         {
@@ -219,6 +339,37 @@ namespace Gamejam2026
                 stabilizeProgress = 0f;
             }
             heldThisFrame = false;
+            if (!game || !game.Playing) return;
+
+            braceHeld = braceFrame == Time.frameCount;
+            operateHeld = operateFrame == Time.frameCount;
+            bool together = braceHeld && operateHeld && bracer && operatorPlayer && bracer != operatorPlayer && CanTakeRole(bracer) && CanTakeRole(operatorPlayer);
+            if (done || unstable || !HasCrank)
+            {
+                if (!HasCrank || done)
+                {
+                    cooperation = 0f;
+                    lightsTold = false;
+                }
+                return;
+            }
+            if (!together) return;
+            cooperation += Time.deltaTime;
+            if (cooperation < CooperationSeconds) return;
+            bool waitingForLights = game.Investigation && game.Investigation.Contrasted && !game.Investigation.Ready;
+            if (waitingForLights)
+            {
+                cooperation = CooperationSeconds;
+                if (!lightsTold)
+                {
+                    lightsTold = true;
+                    game.Notify(game.Investigation.NextTask, 6f);
+                }
+                return;
+            }
+            lightsTold = false;
+            cooperation = 0f;
+            game.Activate(this, operatorPlayer);
         }
 
         void Update()
@@ -241,6 +392,8 @@ namespace Gamejam2026
                 wheel.localRotation = Quaternion.Slerp(wheel.localRotation, startRotation * Quaternion.Euler(0f, 0f, 90f), Time.deltaTime * 3f);
             else if (wheel && unstable)
                 wheel.localRotation = startRotation * Quaternion.Euler(0f, 0f, Mathf.Sin(Time.time * 8f) * 25f);
+            else if (wheel && !done)
+                wheel.localRotation = Quaternion.Slerp(wheel.localRotation, startRotation * Quaternion.Euler(0f, 0f, Cooperation01 * 90f), Time.deltaTime * 6f);
 
             if (crankSocket && wheel)
             {

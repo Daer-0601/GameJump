@@ -42,6 +42,9 @@ namespace Gamejam2026
         float fallSpeed;
         float nextUse;
         float footstepTimer;
+        float crankHold;
+        bool crankHeld;
+        DemoMechanism crankTarget;
         Vector2 lookVelocity;
         const float FootstepInterval = 0.42f;
         public void ConfigureCamera(Vector3 position)
@@ -118,6 +121,9 @@ namespace Gamejam2026
                 Working = false;
                 Stabilizing = null;
                 FocusedMechanism = null;
+                crankHeld = false;
+                crankHold = 0f;
+                crankTarget = null;
                 lookVelocity = Vector2.zero;
                 return;
             }
@@ -182,6 +188,10 @@ namespace Gamejam2026
             Working = false;
             Stabilizing = null;
             FocusedMechanism = null;
+            bool wasCrankHeld = crankHeld;
+            float wasCrankHold = crankHold;
+            DemoMechanism wasCrankTarget = crankTarget;
+            crankHeld = false;
             if (drop && Held != null)
             {
                 string itemName = Held.displayName;
@@ -225,9 +235,9 @@ namespace Gamejam2026
                 }
                 else if (mechanism != null)
                 {
+                    FocusedMechanism = mechanism;
                     if (mechanism.unstable)
                     {
-                        FocusedMechanism = mechanism;
                         if (useHeld && mechanism.done && (!Held || Held.isCandle)) { Stabilizing = mechanism; Working = true; }
                         mechanism.Hold(this, useHeld);
                         int percent = Mathf.RoundToInt(mechanism.Hold01 * 100f);
@@ -235,6 +245,24 @@ namespace Gamejam2026
                             ? UseHint(useHeld ? "Estabilizando " + mechanism.symbol + "  " + percent + "% (sin moverse)"
                                 : "Mantener para estabilizar " + mechanism.symbol)
                             : mechanism.GetHint(this);
+                    }
+                    else if (mechanism.IsBraceAim(hit))
+                    {
+                        Hint = mechanism.BraceHint(this);
+                        if (useHeld && mechanism.CanTakeRole(this))
+                        {
+                            mechanism.Brace(this, true);
+                            Working = true;
+                        }
+                    }
+                    else if (useHeld && mechanism.CanTakeRole(this))
+                    {
+                        crankHeld = true;
+                        crankTarget = mechanism;
+                        crankHold += Time.deltaTime;
+                        mechanism.Operate(this, true);
+                        Working = true;
+                        Hint = mechanism.OperateHint(this);
                     }
                     else
                     {
@@ -262,6 +290,14 @@ namespace Gamejam2026
                     }
                 }
                 break;
+            }
+            if (!crankHeld && !drop)
+            {
+                if (wasCrankHeld && !useHeld && DemoMechanism.IsShortCrankTap(wasCrankHold) && wasCrankTarget
+                    && wasCrankTarget.HasCrank && !wasCrankTarget.done && Held == null)
+                    wasCrankTarget.DetachCrank(this);
+                crankHold = 0f;
+                crankTarget = null;
             }
         }
 
