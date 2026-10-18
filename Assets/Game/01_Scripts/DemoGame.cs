@@ -19,6 +19,7 @@ namespace Gamejam2026
         const string FullKey = "AOscuras.Fullscreen";
         const string WidthKey = "AOscuras.ResW";
         const string HeightKey = "AOscuras.ResH";
+        const string CameraKey = "AOscuras.Camera";
         const string GameplayHelp = DemoPlayerInput.Help;
 
         public DemoPlayer[] players;
@@ -38,8 +39,8 @@ namespace Gamejam2026
         [Range(80f, 99f)] public float criticalDanger = 92f;
         [Range(0.4f, 1f)] public float hitchScale = 0.8f;
         public float hitchSeconds = 0.12f;
-        [HideInInspector] public float dangerPerSecond = 0.31f; // Kept for older editor setup tools.
-        [HideInInspector] public float darknessPenalty = 0.6f; // No longer used by the expedition.
+        [Range(0f, 1f)] public float dangerPerSecond = 0.04f;
+        [Range(0f, 1f)] public float darknessPenalty = 0.03f;
         public float errorPenalty = 12f;
         public float successRelief = 10f;
         public float unstablePenalty = 1.25f;
@@ -100,11 +101,32 @@ namespace Gamejam2026
         }
         public void AddDanger(float amount, string cause)
         {
-            if (!Playing) return;
+            if (!Playing || amount == 0f) return;
             DefeatCause = cause;
             Danger = Mathf.Clamp(Danger + amount, 0, 100);
             NoteDangerBand();
             if (Danger >= 100) Finish(false);
+        }
+
+        void AddPressure(float amount, string causeIfFatal)
+        {
+            if (!Playing || amount <= 0f) return;
+            bool fatal = Danger + amount >= 100f;
+            if (fatal) DefeatCause = causeIfFatal;
+            Danger = Mathf.Clamp(Danger + amount, 0, 100);
+            NoteDangerBand();
+            if (fatal) Finish(false);
+        }
+
+        int CountPlayersOutsideCandle()
+        {
+            if (players == null || Investigation == null) return 0;
+            int count = 0;
+            foreach (var player in players)
+            {
+                if (player && !Investigation.HasCandleLight(player.transform.position + Vector3.up)) count++;
+            }
+            return count;
         }
         public void ShadowContact()
         {
@@ -251,6 +273,7 @@ namespace Gamejam2026
         bool roomBedCached;
         string pulseText = "";
         float pulseUntil;
+        int pulsePriority = -1;
         AudioSource sfxSource;
         DemoAtmosphere atmosphere;
         AudioClip errorClip;
@@ -266,6 +289,7 @@ namespace Gamejam2026
         bool keyboardEdit;
         bool optionsOpen;
         bool fullscreen;
+        bool firstPerson;
         float masterVolume = 1f;
         float ambienceVolume = 1f;
         Resolution[] displayModes = System.Array.Empty<Resolution>();
@@ -276,8 +300,8 @@ namespace Gamejam2026
         MenuCommand command;
         Keyboard textKeyboard;
 
-        readonly Rect[] hits = new Rect[6];
-        readonly Rect[] visuals = new Rect[6];
+        readonly Rect[] hits = new Rect[7];
+        readonly Rect[] visuals = new Rect[7];
         Rect columnRect;
         Rect titleRect;
         Rect briefRect;
@@ -368,6 +392,7 @@ namespace Gamejam2026
             bool pendingStart = Memory.AutoStart;
             Memory.AutoStart = false;
             if (pendingStart) Begin();
+            ApplyPerspective(true);
         }
 
         public void Begin()
@@ -421,10 +446,20 @@ namespace Gamejam2026
             elapsed += Time.deltaTime;
             CandleCharge = Mathf.Max(0, CandleCharge - Time.deltaTime / 360f);
             DestabilizeDue();
-            // Investigation starts without a death clock. Only unresolved damage keeps pressure rising.
+            if (!Playing) return;
             int loose = CountUnstable();
-            float rate = loose > 1 ? unstablePenalty * (1f + (loose - 1) * 1.6f) : loose * unstablePenalty;
-            if (rate > 0) AddDanger(rate * Time.deltaTime, "mecanismos desajustados sin estabilizar");
+            float unstableRate = loose > 1 ? unstablePenalty * (1f + (loose - 1) * 1.6f) : loose * unstablePenalty;
+            if (unstableRate > 0f) AddDanger(unstableRate * Time.deltaTime, "mecanismos desajustados sin estabilizar");
+            if (!Playing) return;
+            int unlit = CountPlayersOutsideCandle();
+            float passive = Mathf.Max(0f, dangerPerSecond) + unlit * Mathf.Max(0f, darknessPenalty);
+            if (passive > 0f)
+            {
+                string cause = unstableRate > 0f
+                    ? "mecanismos desajustados sin estabilizar"
+                    : unlit > 0 ? "permanecer a oscuras" : "el avance del peligro";
+                AddPressure(passive * Time.deltaTime, cause);
+            }
             if (!Playing) return;
             if (Containing)
             {
@@ -483,6 +518,7 @@ namespace Gamejam2026
             if (completed == 1)
             {
                 FirstMechanismCompleted?.Invoke(mechanism);
+                Pulse("La compuerta se abre", 2);
                 Notify("¡GOLPE EN LA COMPUERTA! El primer sello ha abierto el paso.", 5);
             }
             if (nextDestabilize < 0f) ScheduleDestabilize();
@@ -501,7 +537,7 @@ namespace Gamejam2026
             if (player.playerIndex >= 0 && player.playerIndex < helpStabilizeDismissed.Length)
                 helpStabilizeDismissed[player.playerIndex] = true;
             PlaySfx(gearsClip);
-            Pulse(mechanism.symbol + " estable");
+            Pulse(mechanism.symbol + " estable", 1);
             Danger = Mathf.Max(0f, Danger - stabilizeRelief);
             foreach (var teammate in players) teammate.Tell("¡CLONC! " + mechanism.symbol + " estabilizado. −" + stabilizeRelief.ToString("0") + "% peligro.");
             TryWin();
@@ -537,7 +573,7 @@ namespace Gamejam2026
                 pick.unstable = true;
                 disturbanceUntil = elapsed + 1.6f;
                 PlaySfx(dangerClip);
-                Pulse(pick.symbol + " desajustado");
+                Pulse(pick.symbol + " desajustado", 2);
                 Notify(pick.symbol + " se desajustó. " + (CountUnstable() > 1 ? "DOS averías: el peligro sube más rápido. " : "") + "Mantener 1,5 s, quieto y sin manivela.", 7);
             }
             ScheduleDestabilize();
@@ -694,6 +730,7 @@ namespace Gamejam2026
             ambienceVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(AmbienceKey, 1f));
             if (PlayerPrefs.HasKey(SfxKey)) sfxVolume = Mathf.Clamp01(PlayerPrefs.GetFloat(SfxKey, sfxVolume));
             fullscreen = PlayerPrefs.HasKey(FullKey) ? PlayerPrefs.GetInt(FullKey, 1) == 1 : Screen.fullScreen;
+            firstPerson = PlayerPrefs.GetInt(CameraKey, 0) == 1;
             int wantW = PlayerPrefs.GetInt(WidthKey, Screen.width);
             int wantH = PlayerPrefs.GetInt(HeightKey, Screen.height);
 #if UNITY_EDITOR
@@ -765,21 +802,23 @@ namespace Gamejam2026
             }
         }
 
-        public void Pulse(string text)
+        public void Pulse(string text, int priority = 0)
         {
             if (string.IsNullOrEmpty(text)) return;
+            if (Time.time < pulseUntil && priority < pulsePriority) return;
             pulseText = text;
-            pulseUntil = Time.unscaledTime + 1.5f;
+            pulsePriority = priority;
+            pulseUntil = Time.time + 1.6f;
         }
 
         void NoteDangerBand()
         {
-            int band = Danger >= 90f ? 3 : Danger >= dangerAlarmThreshold ? 2 : Danger >= 40f ? 1 : 0;
+            int band = Danger >= 90f ? 3 : Danger >= dangerAlarmThreshold ? 2 : Danger >= 15f ? 1 : 0;
             if (band > dangerBand)
             {
-                if (band == 1) Pulse("El peligro sube");
-                else if (band == 2) Pulse("Peligro alto");
-                else if (band == 3) Pulse("Peligro crítico");
+                if (band == 1) Pulse("El peligro sube", 0);
+                else if (band == 2) Pulse("Peligro alto", 3);
+                else if (band == 3) Pulse("Peligro crítico", 4);
             }
             dangerBand = band;
         }
@@ -787,14 +826,34 @@ namespace Gamejam2026
         void ApplyAmbience()
         {
             CacheRoomBed();
+            bool running = !paused;
             if (ambience)
             {
-                // Same curve as e8ee163: one looping clip, volume only, never restarted.
+                // Same clip and 0.16–0.42 curve. Volume eases; the loop is never restarted.
                 float bed = started ? Mathf.Lerp(0.16f, 0.42f, Danger / 100f) : 0.16f;
-                ambience.volume = bed * ambienceVolume;
-                if (!ambience.isPlaying && ambience.clip) ambience.Play();
+                float target = bed * ambienceVolume;
+                ambience.volume = Mathf.MoveTowards(ambience.volume, target, Time.unscaledDeltaTime * 0.22f);
+                HoldLoop(ambience, running);
             }
-            if (roomBed) roomBed.volume = roomBedVolume * ambienceVolume;
+            if (roomBed)
+            {
+                // Authored bed stays constant. 0.28 keeps it present while the crescendo can pass it.
+                roomBed.volume = roomBedVolume * 0.28f * ambienceVolume;
+                HoldLoop(roomBed, running);
+            }
+        }
+
+        static void HoldLoop(AudioSource source, bool running)
+        {
+            if (!source || !source.clip) return;
+            if (!running)
+            {
+                if (source.isPlaying) source.Pause();
+                return;
+            }
+            if (source.isPlaying) return;
+            if (source.time > 0.01f) source.UnPause();
+            if (!source.isPlaying) source.Play();
         }
 
         void SaveAudio()
@@ -802,6 +861,7 @@ namespace Gamejam2026
             PlayerPrefs.SetFloat(MasterKey, masterVolume);
             PlayerPrefs.SetFloat(AmbienceKey, ambienceVolume);
             PlayerPrefs.SetFloat(SfxKey, sfxVolume);
+            PlayerPrefs.SetInt(CameraKey, firstPerson ? 1 : 0);
 #if !UNITY_EDITOR
             PlayerPrefs.SetInt(FullKey, fullscreen ? 1 : 0);
             if (displayModes.Length > 0)
@@ -822,6 +882,21 @@ namespace Gamejam2026
             }
             Resolution mode = displayModes[Mathf.Clamp(resolutionIndex, 0, displayModes.Length - 1)];
             Screen.SetResolution(mode.width, mode.height, fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed);
+        }
+
+        void ApplyPerspective(bool immediate)
+        {
+            if (players == null) return;
+            for (int i = 0; i < players.Length; i++)
+                if (players[i]) players[i].SetFirstPerson(firstPerson, immediate);
+        }
+
+        void SetPerspective(bool wantFirst)
+        {
+            if (wantFirst == firstPerson) return;
+            firstPerson = wantFirst;
+            ApplyPerspective(false);
+            SaveAudio();
         }
 
         void ToggleFullscreen()
@@ -899,7 +974,7 @@ namespace Gamejam2026
 
         int ItemCount(int id)
         {
-            if (optionsOpen && (id == 0 || id == 1)) return 6;
+            if (optionsOpen && (id == 0 || id == 1)) return 7;
             if (id == 0) return 5;
             if (id == 1) return 4;
             if (id == 2) return 3;
@@ -1042,16 +1117,18 @@ namespace Gamejam2026
         void NudgeOption(int direction)
         {
             if (focusIndex >= 0 && focusIndex <= 2) SetOption(focusIndex, OptionValue(focusIndex) + direction * 0.05f);
-            else if (focusIndex == 4) ShiftResolution(direction);
+            else if (focusIndex == 3) SetPerspective(direction > 0);
+            else if (focusIndex == 5) ShiftResolution(direction);
         }
 
         void ActivateFocused()
         {
             if (optionsOpen)
             {
-                if (focusIndex == 3) ToggleFullscreen();
-                else if (focusIndex == 4) ShiftResolution(1);
-                else if (focusIndex == 5) CloseOptions();
+                if (focusIndex == 3) SetPerspective(!firstPerson);
+                else if (focusIndex == 4) ToggleFullscreen();
+                else if (focusIndex == 5) ShiftResolution(1);
+                else if (focusIndex == 6) CloseOptions();
                 return;
             }
             if (overlay == 0)
@@ -1320,14 +1397,14 @@ namespace Gamejam2026
             float y = Mathf.Max(height * 0.08f, 48f);
             titleRect = new Rect(x, y, columnW, 64f);
             y = titleRect.yMax + 28f;
-            hitCount = 6;
-            for (int i = 0; i < 5; i++)
+            hitCount = 7;
+            for (int i = 0; i < 6; i++)
             {
                 hits[i] = visuals[i] = new Rect(x, y, columnW, 42f);
                 y += 50f;
             }
-            hits[5] = visuals[5] = new Rect(x, y + 10f, columnW, 46f);
-            helpRect = new Rect(x, hits[5].yMax + 16f, columnW, 72f);
+            hits[6] = visuals[6] = new Rect(x, y + 10f, columnW, 46f);
+            helpRect = new Rect(x, hits[6].yMax + 16f, columnW, 72f);
             statusRect = helpRect;
         }
 
@@ -1488,13 +1565,14 @@ namespace Gamejam2026
             DrawSlider(0, "GENERAL");
             DrawSlider(1, "AMBIENTE");
             DrawSlider(2, "EFECTOS");
-            DrawChoice(hits[3], "PANTALLA COMPLETA    " + (fullscreen ? "SÍ" : "NO"), 3, false, false, false);
+            DrawChoice(hits[3], "CÁMARA: " + (firstPerson ? "PRIMERA PERSONA" : "TERCERA PERSONA"), 3, false, false, false);
+            DrawChoice(hits[4], "PANTALLA COMPLETA    " + (fullscreen ? "SÍ" : "NO"), 4, false, false, false);
             string resolution = displayModes.Length == 0
                 ? Screen.width + " × " + Screen.height
                 : displayModes[resolutionIndex].width + " × " + displayModes[resolutionIndex].height;
-            DrawChoice(hits[4], "RESOLUCIÓN    " + resolution, 4, displayModes.Length == 0, false, false);
-            DrawChoice(hits[5], "VOLVER", 5, false, false, false);
-            Label(helpRect, "En los volúmenes y la resolución, izquierda y derecha cambian el valor. Enter o A confirman. Esc o B regresan.", smallStyle, Ash);
+            DrawChoice(hits[5], "RESOLUCIÓN    " + resolution, 5, displayModes.Length == 0, false, false);
+            DrawChoice(hits[6], "VOLVER", 6, false, false, false);
+            Label(helpRect, "Izquierda y derecha cambian volumen, cámara y resolución. Enter o A confirman. Esc o B regresan.", smallStyle, Ash);
         }
 
         void DrawSlider(int index, string label)
@@ -1692,6 +1770,9 @@ namespace Gamejam2026
                     DrawHudBottomPanel(x, ref bottom, panelWidth, cooperation, hudSmallStyle, Paper, focus.Cooperation01);
                 }
 
+                if (Time.time < pulseUntil && !string.IsNullOrEmpty(pulseText))
+                    DrawHudBottomPanel(x, ref bottom, panelWidth, pulseText, hudStyle, pulsePriority >= 3 ? Accent : Paper);
+
                 if (Time.unscaledTime < player.MessageUntil && !string.IsNullOrEmpty(player.Message)
                     && (!threatVisible || player.Message != threatText))
                     DrawHudBottomPanel(x, ref bottom, panelWidth, player.Message, hudSmallStyle, Ash);
@@ -1726,7 +1807,7 @@ namespace Gamejam2026
             if (overlay == 0)
                 return "Flechas, stick o ratón para elegir. Enter o A confirman. En un nombre, Enter escribe.\n" + GameplayHelp;
             if (overlay == 1)
-                return "Esc o Continuar reanudan. Opciones cambia el volumen sin abandonar la expedición.\n" + GameplayHelp;
+                return "Esc o Continuar reanudan. Opciones cambia el volumen y la cámara sin abandonar la expedición.\n" + GameplayHelp;
             return "R o Volver a intentar empieza otra expedición con los mismos nombres. Volver al menú regresa a los nombres.\n" + GameplayHelp;
         }
 

@@ -13696,8 +13696,8 @@ MonoBehaviour:
   keyboardLookRampTime: 0.12
   preciseLookMultiplier: 0.35
   reach: 2.6
-  shakeAtFullDanger: 0.008
-  shakeAtCritical: 0.014
+  shakeAtFullDanger: 0.01
+  shakeAtCritical: 0.018
 --- !u!4 &765641623
 Transform:
   m_ObjectHideFlags: 0
@@ -13987,7 +13987,14 @@ MonoBehaviour:
   candles:
   - {fileID: 303587550}
   - {fileID: 716074949}
-  atmosphereLights: []
+  atmosphereLights:
+  - {fileID: 655480794}
+  - {fileID: 524230977}
+  - {fileID: 1134320216}
+  - {fileID: 1761774822}
+  - {fileID: 1765055932}
+  - {fileID: 1839507438}
+  - {fileID: 433085795}
   ambience: {fileID: 1659874648}
   walkingClip: {fileID: 8300000, guid: 65dee3304139b8a4f86d3960ba27e933, type: 3}
   lightClip: {fileID: 8300000, guid: 0353d449a2364e34498627fda2f63aeb, type: 3}
@@ -14001,8 +14008,8 @@ MonoBehaviour:
   criticalDanger: 92
   hitchScale: 0.8
   hitchSeconds: 0.12
-  dangerPerSecond: 0.31
-  darknessPenalty: 0.6
+  dangerPerSecond: 0.04
+  darknessPenalty: 0.03
   errorPenalty: 12
   successRelief: 10
   unstablePenalty: 1.25
@@ -14072,9 +14079,9 @@ MonoBehaviour:
   - {fileID: 1761774822}
   - {fileID: 433085795}
   - {fileID: 1765055932}
-  monoDanger: 0.85
-  monoSeconds: 0.07
-  monoGap: 2.2
+  monoDanger: 0.9
+  monoSeconds: 1.4
+  monoGap: 9
 --- !u!114 &779294661
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -37162,8 +37169,8 @@ MonoBehaviour:
   keyboardLookRampTime: 0.12
   preciseLookMultiplier: 0.35
   reach: 2.6
-  shakeAtFullDanger: 0.008
-  shakeAtCritical: 0.014
+  shakeAtFullDanger: 0.01
+  shakeAtCritical: 0.018
 --- !u!4 &2004518567
 Transform:
   m_ObjectHideFlags: 0

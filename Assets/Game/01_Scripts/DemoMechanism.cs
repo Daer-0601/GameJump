@@ -324,7 +324,9 @@ namespace Gamejam2026
             heldThisFrame = true;
             if (lastHoldFrame == Time.frameCount) return;
             lastHoldFrame = Time.frameCount;
+            bool starting = stabilizeProgress <= 0f;
             stabilizeProgress += Time.deltaTime;
+            if (starting) game.Pulse("Estabilizando " + symbol);
             if (stabilizeProgress < stabilizeTime) return;
             stabilizeProgress = 0f;
             unstable = false;
@@ -335,7 +337,7 @@ namespace Gamejam2026
         {
             if (!heldThisFrame)
             {
-                if (stabilizeProgress > 0.15f && game) game.Pulse("Estabilización interrumpida");
+                if (stabilizeProgress > 0.15f && game && game.Playing) game.Pulse("Estabilización interrumpida", 1);
                 stabilizeProgress = 0f;
             }
             heldThisFrame = false;

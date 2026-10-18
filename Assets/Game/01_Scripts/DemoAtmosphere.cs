@@ -15,13 +15,20 @@ namespace Gamejam2026
         Vignette vignette;
         FilmGrain grain;
         ChromaticAberration aberration;
+        ColorAdjustments colors;
         bool ended;
         bool victory;
         float ending;
         float shock;
-        [Range(0.7f, 1f)] public float monoDanger = 0.85f;
-        public float monoSeconds = 0.07f;
-        public float monoGap = 2.2f;
+        float[] atmosphereBase;
+        float lightDim = 1f;
+        float nextMono;
+        float monoHold;
+        bool monoArmed;
+        [Range(0.7f, 1f)] public float monoDanger = 0.9f;
+        public float monoSeconds = 1.4f;
+        public float monoGap = 9f;
+        const float MonoDepth = -90f;
         public float Blackout => ended && !victory ? Mathf.Clamp01(ending / 1.8f) : 0f;
 
         public void Initialize(DemoGame owner)
@@ -33,13 +40,13 @@ namespace Gamejam2026
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogColor = new Color(0.004f, 0.006f, 0.009f);
-            foreach (var light in game.atmosphereLights) if (light) light.intensity = 0f;
             foreach (var light in FindObjectsByType<Light>())
                 if (light.type == LightType.Directional) light.intensity = 0f;
             if (navigationLights != null)
                 foreach (var light in navigationLights)
                     if (light) { light.intensity = 0.08f; light.range = 2.8f; }
             if (victoryLights != null) foreach (var light in victoryLights) if (light) light.intensity = 0f;
+            CaptureAtmosphere();
             foreach (var player in game.players)
             {
                 var cameraData = player.view.GetUniversalAdditionalCameraData();
@@ -58,6 +65,9 @@ namespace Gamejam2026
             grain = profile.Add<FilmGrain>(true);
             grain.type.Override(FilmGrainLookup.Thin1);
             aberration = profile.Add<ChromaticAberration>(true);
+            colors = profile.Add<ColorAdjustments>(true);
+            colors.saturation.Override(0f);
+            nextMono = monoGap;
         }
 
         public void WrongOrder() { shock = 1f; }
@@ -92,6 +102,8 @@ namespace Gamejam2026
             vignette.intensity.Override(Mathf.Lerp(0.22f + danger * 0.18f + critical * 0.08f + shock * 0.13f + disturbance * 0.035f, 0.12f, relief));
             grain.intensity.Override(Mathf.Lerp(0.12f + danger * 0.22f, 0.04f, relief));
             aberration.intensity.Override(Mathf.Lerp(0.015f + danger * 0.055f + shock * 0.06f, 0f, relief));
+            ApplyDangerLights(danger, relief, dt);
+            ApplyMonochrome(danger, dt);
             if (victory && victoryLights != null)
             {
                 foreach (var light in victoryLights) if (light) light.intensity = relief * 4f;
@@ -109,8 +121,85 @@ namespace Gamejam2026
             }
         }
 
+        void CaptureAtmosphere()
+        {
+            var lights = game.atmosphereLights;
+            atmosphereBase = lights != null ? new float[lights.Length] : System.Array.Empty<float>();
+            if (lights == null) return;
+            for (int i = 0; i < lights.Length; i++)
+                atmosphereBase[i] = lights[i] ? lights[i].intensity : 0f;
+        }
+
+        bool IsVictoryLight(Light light)
+        {
+            if (!light || victoryLights == null) return false;
+            for (int i = 0; i < victoryLights.Length; i++)
+                if (victoryLights[i] == light) return true;
+            return false;
+        }
+
+        void ApplyDangerLights(float danger, float relief, float dt)
+        {
+            float target = Mathf.Lerp(1f, 0.32f, danger);
+            if (victory) target = Mathf.Lerp(target, 1f, relief);
+            lightDim = Mathf.MoveTowards(lightDim, target, Mathf.Max(dt, 0f) * 0.45f);
+            var lights = game.atmosphereLights;
+            if (lights == null || atmosphereBase == null) return;
+            int count = Mathf.Min(lights.Length, atmosphereBase.Length);
+            for (int i = 0; i < count; i++)
+            {
+                var light = lights[i];
+                if (!light || IsVictoryLight(light)) continue;
+                light.intensity = atmosphereBase[i] * lightDim;
+            }
+        }
+
+        void RestoreAtmosphere()
+        {
+            var lights = game ? game.atmosphereLights : null;
+            if (lights == null || atmosphereBase == null) return;
+            int count = Mathf.Min(lights.Length, atmosphereBase.Length);
+            for (int i = 0; i < count; i++)
+                if (lights[i] && !IsVictoryLight(lights[i])) lights[i].intensity = atmosphereBase[i];
+        }
+
+        void ApplyMonochrome(float danger, float dt)
+        {
+            if (!colors) return;
+            bool live = game.Playing && !ended && danger >= monoDanger;
+            if (!live)
+            {
+                monoArmed = false;
+                monoHold = 0f;
+                if (colors.saturation.value != 0f) colors.saturation.Override(0f);
+                return;
+            }
+            float duration = Mathf.Max(0.2f, monoSeconds);
+            float gap = Mathf.Max(duration + 0.5f, monoGap);
+            if (!monoArmed)
+            {
+                monoArmed = true;
+                nextMono = Time.time + gap;
+            }
+            if (monoHold <= 0f && Time.time >= nextMono)
+            {
+                monoHold = duration;
+                nextMono = Time.time + gap;
+            }
+            float level = 0f;
+            if (monoHold > 0f)
+            {
+                monoHold = Mathf.Max(0f, monoHold - dt);
+                float along = 1f - Mathf.Clamp01(monoHold / duration);
+                level = Mathf.Sin(along * Mathf.PI);
+            }
+            colors.saturation.Override(Mathf.Lerp(0f, MonoDepth, level));
+        }
+
         void OnDestroy()
         {
+            RestoreAtmosphere();
+            if (colors) colors.saturation.Override(0f);
             if (profile) Destroy(profile);
             if (volume) Destroy(volume);
         }

@@ -137,7 +137,7 @@ public class DemoProductionProbe : MonoBehaviour
         var investigation = game.Investigation;
         Require(investigation.Stations.Count == 6 && investigation.DisplayedSymbol(investigation.FalseIndex) != game.SymbolAt(investigation.FalseIndex),"seis puestos y exactamente un registro falso");
         Set(game,"<CandleCharge>k__BackingField",0f); float safeDanger = game.Danger; Call(game,"Simulate");
-        Require(game.CandleRange == 2.8f && game.Danger == safeDanger && !game.Finished,"vela al mínimo no produce peligro ni derrota");
+        Require(game.CandleRange == 2.8f && game.Danger < safeDanger + 1f && !game.Finished,"vela al mínimo no produce un golpe de peligro ni derrota");
         Set(game,"<CandleCharge>k__BackingField",.25f);
         var growth = FindObjectsByType<RecintoContamination>().First(g => g.blockedStation);
         var blocked = growth.blockedStation; Require(blocked.Contaminated && !blocked.AcceptsWork,"brote bloquea el puesto");

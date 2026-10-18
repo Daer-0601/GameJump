@@ -34,10 +34,20 @@ namespace Gamejam2026
         public DemoMechanism FocusedMechanism { get; private set; }
         public bool Working { get; private set; }
         public float ActualSpeed => controller ? Vector3.ProjectOnPlane(controller.velocity, Vector3.up).magnitude : 0f;
-        [Range(0f, 0.03f)] public float shakeAtFullDanger = 0.008f;
-        [Range(0f, 0.04f)] public float shakeAtCritical = 0.014f;
+        [Range(0f, 0.03f)] public float shakeAtFullDanger = 0.01f;
+        [Range(0f, 0.04f)] public float shakeAtCritical = 0.018f;
         Vector3 viewRest;
+        Vector3 thirdRest;
         bool viewRestReady;
+        Transform head;
+        Transform[] bodyNodes;
+        int[] bodyLayers;
+        bool bodyHidden;
+        float viewBlend;
+        bool firstPerson;
+        const float EyeForward = 0.16f;
+        const float EyeLift = 0.05f;
+        static readonly Vector3 EyeFallback = new Vector3(0f, 1.62f, 0.16f);
         DemoClue readingClue;
         CharacterController controller;
         AudioSource footstepsSource;
@@ -52,9 +62,23 @@ namespace Gamejam2026
         const float FootstepInterval = 0.42f;
         public void ConfigureCamera(Vector3 position)
         {
+            thirdRest = position;
             viewRest = position;
             viewRestReady = true;
-            if (view) view.transform.localPosition = position;
+            if (view && viewBlend <= 0f) view.transform.localPosition = position;
+        }
+
+        public void SetFirstPerson(bool value, bool immediate)
+        {
+            firstPerson = value;
+            if (!immediate) return;
+            viewBlend = value ? 1f : 0f;
+            ApplyBodyHide(viewBlend > 0.2f);
+            if (!view || !viewRestReady) return;
+            float shaped = Mathf.SmoothStep(0f, 1f, viewBlend);
+            viewRest = Vector3.Lerp(thirdRest, EyeLocal(), shaped);
+            view.transform.localPosition = viewRest;
+            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, 0f);
         }
 
         void Awake()
@@ -63,16 +87,31 @@ namespace Gamejam2026
             footstepsSource = gameObject.AddComponent<AudioSource>();
             footstepsSource.playOnAwake = false;
             footstepsSource.spatialBlend = 0f;
+            head = FindNamed(transform, "Head");
+            CacheBody();
             if (view)
             {
-                viewRest = view.transform.localPosition;
+                thirdRest = view.transform.localPosition;
+                viewRest = thirdRest;
                 viewRestReady = true;
             }
+        }
+
+        void OnDisable()
+        {
+            ApplyBodyHide(false);
         }
 
         void LateUpdate()
         {
             if (!view || !viewRestReady) return;
+            float target = firstPerson ? 1f : 0f;
+            viewBlend = Mathf.MoveTowards(viewBlend, target, Time.unscaledDeltaTime * 3.2f);
+            float shaped = Mathf.SmoothStep(0f, 1f, viewBlend);
+            viewRest = Vector3.Lerp(thirdRest, EyeLocal(), shaped);
+            ApplyBodyHide(viewBlend > 0.2f);
+            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, 0f);
+
             float amount = 0f;
             if (game && game.Playing)
             {
@@ -89,16 +128,65 @@ namespace Gamejam2026
                     Mathf.PerlinNoise(8f + playerIndex, t * 15f) - 0.5f,
                     0f) * amount * 2f;
             }
-            Vector3 pivot = transform.position + Vector3.up * 1.45f;
             Vector3 desired = transform.TransformPoint(viewRest + offset);
+            Vector3 pivot = transform.position + Vector3.up * 1.45f;
             Vector3 direction = desired - pivot;
             float distance = direction.magnitude;
-            foreach (var hit in Physics.SphereCastAll(pivot, .16f, direction.normalized, distance, ~0, QueryTriggerInteraction.Ignore))
+            if (distance > 0.02f)
             {
-                if (hit.collider.GetComponentInParent<DemoPlayer>() || hit.collider.GetComponentInParent<CarryObject>()) continue;
-                distance = Mathf.Min(distance, Mathf.Max(.25f, hit.distance - .12f));
+                bool close = shaped >= 0.65f;
+                float radius = close ? 0.08f : 0.16f;
+                float minimum = close ? 0.05f : 0.25f;
+                float inset = close ? 0.05f : 0.12f;
+                foreach (var hit in Physics.SphereCastAll(pivot, radius, direction.normalized, distance, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    if (hit.collider.GetComponentInParent<DemoPlayer>() || hit.collider.GetComponentInParent<CarryObject>()) continue;
+                    distance = Mathf.Min(distance, Mathf.Max(minimum, hit.distance - inset));
+                }
+                desired = pivot + direction.normalized * distance;
             }
-            view.transform.position = pivot + direction.normalized * distance;
+            view.transform.position = desired;
+        }
+
+        Vector3 EyeLocal()
+        {
+            if (!head) return EyeFallback;
+            Vector3 eye = head.position + transform.up * EyeLift + transform.forward * EyeForward;
+            return transform.InverseTransformPoint(eye);
+        }
+
+        void CacheBody()
+        {
+            var motion = GetComponent<DemoMotion>();
+            if (!motion || !motion.visual) return;
+            bodyNodes = motion.visual.GetComponentsInChildren<Transform>(true);
+            bodyLayers = new int[bodyNodes.Length];
+            for (int i = 0; i < bodyNodes.Length; i++)
+                bodyLayers[i] = bodyNodes[i] ? bodyNodes[i].gameObject.layer : 0;
+        }
+
+        void ApplyBodyHide(bool hide)
+        {
+            if (hide == bodyHidden || bodyNodes == null) return;
+            bodyHidden = hide;
+            int hiddenLayer = playerIndex == 0 ? 8 : 9;
+            for (int i = 0; i < bodyNodes.Length; i++)
+            {
+                if (!bodyNodes[i]) continue;
+                bodyNodes[i].gameObject.layer = hide ? hiddenLayer : bodyLayers[i];
+            }
+        }
+
+        static Transform FindNamed(Transform root, string bone)
+        {
+            if (!root) return null;
+            if (root.name == bone) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindNamed(root.GetChild(i), bone);
+                if (found) return found;
+            }
+            return null;
         }
 
         public void Tell(string text, float seconds = 3f)
@@ -151,7 +239,9 @@ namespace Gamejam2026
             }
             transform.Rotate(0f, look.x, 0f);
             pitch = Mathf.Clamp(pitch - look.y, -35f, 60f);
-            view.transform.localRotation = Quaternion.Euler(pitch + 9f, 0f, 0f);
+            if (!view) return;
+            float shaped = Mathf.SmoothStep(0f, 1f, viewBlend);
+            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, 0f);
         }
 
         static float ApproachLook(float current, float target, float step)
