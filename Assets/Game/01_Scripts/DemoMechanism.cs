@@ -318,6 +318,41 @@ namespace Gamejam2026
             Interact(player);
         }
 
+        public void SetMountedCrank(CarryObject crank)
+        {
+            mountedCrank = crank;
+        }
+
+        public void ResetExpedition()
+        {
+            done = false;
+            unstable = false;
+            cooperation = 0f;
+            stabilizeProgress = 0f;
+            mountedCrank = null;
+            heldThisFrame = false;
+            braceHeld = false;
+            operateHeld = false;
+            lightsTold = false;
+            bracer = null;
+            operatorPlayer = null;
+            if (wheel)
+            {
+                if (startRotation != default) wheel.localRotation = startRotation;
+                wheel.localPosition = wheelPosition;
+            }
+            if (crankSocket) crankSocket.localRotation = socketStartRotation;
+            if (sparks && sparks.isPlaying) sparks.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+
+        public void ApplyReplica(bool isDone, bool isUnstable, float cooperationSeconds, float holdSeconds)
+        {
+            done = isDone;
+            unstable = isUnstable;
+            cooperation = cooperationSeconds;
+            stabilizeProgress = holdSeconds;
+        }
+
         public void Hold(DemoPlayer player, bool holding)
         {
             if (!game.PlayerInputEnabled || !done || !unstable || !holding || player == null || (player.Held && !player.Held.isCandle)) return;
@@ -335,6 +370,8 @@ namespace Gamejam2026
 
         void LateUpdate()
         {
+            // En LAN las dos pulsaciones se aplican en el anfitrión, aunque lleguen en frames distintos del cliente.
+            if (!LanAuthority.Simulates) return;
             if (!heldThisFrame)
             {
                 if (stabilizeProgress > 0.15f && game && game.Playing) game.Pulse("Estabilización interrumpida", 1);

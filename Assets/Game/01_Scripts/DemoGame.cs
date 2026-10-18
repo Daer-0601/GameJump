@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -25,6 +26,7 @@ namespace Gamejam2026
         public DemoPlayer[] players;
         public DemoMechanism[] mechanisms;
         public CarryObject[] candles;
+        public CarryObject crank;
         public Light[] atmosphereLights;
         public AudioSource ambience;
         public AudioClip walkingClip;
@@ -49,6 +51,9 @@ namespace Gamejam2026
         public float destabilizeMax = 52f;
         public bool Playing => started && !paused && !finished;
         public bool Finished => finished;
+        public bool PausedReplica => paused;
+        public bool WonReplica => won;
+        public bool TalkingNested => talkDepth > 0;
         public bool PlayerInputEnabled => Playing && Time.frameCount > inputResumeFrame;
         public float Danger { get; private set; }
         public float Disturbance => Mathf.Clamp01((disturbanceUntil - elapsed) / 1.4f);
@@ -68,13 +73,18 @@ namespace Gamejam2026
         public int ShadowContacts { get; private set; }
         public string DefeatCause { get; private set; } = "errores de procedimiento";
         public bool CandleBurst => Containing && elapsed % 4.7f < .28f;
+        int talkDepth;
+        bool lanBeginArmed;
         string threatText;
         float threatUntil;
         float contactFlashUntil;
         public void WarnThreat(string message)
         {
             threatText = message; threatUntil = elapsed + 7;
+            talkDepth++;
             Notify(message, 7);
+            talkDepth--;
+            if (!LanEcho.Applying && LanAuthority.IsHost) LanSession.BroadcastWarn(message);
         }
         public string DangerWords => Danger >= 90 ? "crítico" : Danger >= dangerAlarmThreshold ? "inestable" : "en observación";
         public static readonly Vector3 WorkshopSeal = new Vector3(-20f, .05f, 105f);
@@ -133,9 +143,7 @@ namespace Gamejam2026
             if (!Playing) return;
             ShadowContacts++;
             if (ShadowContacts > 1) { DefeatCause = "segundo contacto con la sombra fuera de la vela"; Finish(false); return; }
-            if (atmosphere) atmosphere.WrongOrder();
-            contactFlashUntil = elapsed + .08f;
-            foreach (var p in players) { var motion = p.GetComponent<DemoMotion>(); if (motion) motion.Recoil(); }
+            PresentContact();
             Notify("La sombra os rozó. Ha retrocedido. Otro contacto fuera de la vela termina la expedición. +15%", 7);
             AddDanger(15, "contacto con la sombra");
         }
@@ -335,6 +343,13 @@ namespace Gamejam2026
         }
 
         enum MenuCommand { None, Begin, Continue, Retry, MainMenu, Quit }
+        enum NetMenu { None, Host, Join }
+        struct NetItem { public string label; public int action; public bool disabled; public bool field; }
+
+        NetMenu lanMenu;
+        string lanIp = "";
+        readonly NetItem[] netItems = new NetItem[4];
+        int netCount;
 
         void OnEnable()
         {
@@ -351,11 +366,7 @@ namespace Gamejam2026
         {
             Time.timeScale = 1f;
             LoadSession();
-            for (int i = order.Length - 1; i > 0; i--)
-            {
-                int j = UnityEngine.Random.Range(0, i + 1);
-                (order[i], order[j]) = (order[j], order[i]);
-            }
+            RollOrder();
             nextDisturbance = 12f;
             sfxSource = gameObject.AddComponent<AudioSource>();
             sfxSource.playOnAwake = false;
@@ -393,11 +404,13 @@ namespace Gamejam2026
             Memory.AutoStart = false;
             if (pendingStart) Begin();
             ApplyPerspective(true);
+            LanFlow.Bind(this);
         }
 
         public void Begin()
         {
             if (transitioning) return;
+            if (LanAuthority.InSession && !lanBeginArmed) return;
             ResetLearningTips();
             name1 = CleanName(name1, "Jugador 1");
             name2 = CleanName(name2, "Jugador 2");
@@ -417,6 +430,9 @@ namespace Gamejam2026
 
         void Update()
         {
+            LanFlow.Bind(this);
+            LanFlow.Tick();
+            if (!started) RebuildLanItems();
             BindTextKeyboard();
             ExecuteCommand();
             if (!this) return;
@@ -430,7 +446,7 @@ namespace Gamejam2026
             if (!this) return;
 
             RefreshOverlay();
-            if (overlay < 0) Simulate();
+            if (overlay < 0 && LanAuthority.Simulates) Simulate();
             ApplyAmbience();
             if (hitchUntil > 0f && (paused || finished || Time.unscaledTime >= hitchUntil))
             {
@@ -468,7 +484,7 @@ namespace Gamejam2026
                 if (Containment01 >= 1f) { Finish(true); return; }
             }
             NoteDangerBand();
-            if (!hitchSpent && Danger >= criticalDanger && Time.timeScale > 0.95f)
+            if (!hitchSpent && Danger >= criticalDanger && Time.timeScale > 0.95f && !LanAuthority.LanMatch)
             {
                 hitchSpent = true;
                 hitchUntil = Time.unscaledTime + Mathf.Max(0.04f, hitchSeconds);
@@ -501,7 +517,7 @@ namespace Gamejam2026
             {
                 AddDanger(errorPenalty, "errores de orden en los mecanismos");
                 disturbanceUntil = elapsed + 2f;
-                if (atmosphere) atmosphere.WrongOrder();
+                PresentShock();
                 PlaySfx(errorClip);
                 string consequence = Investigation ? Investigation.OnWrongProcedure() : "";
                 Notify("¡CLAC! " + (unverified ? "Datos sin contrastar: procedimiento incorrecto" : "Orden incorrecto") + " (+12%). " + consequence + " Los aciertos se conservan.", 7);
@@ -618,8 +634,19 @@ namespace Gamejam2026
                 }
             }
 
+            this.crank = crank;
             if (crank != null && players != null && players.Length > 1 && players[1] != null && players[1].Held == null)
                 crank.PickUp(players[1]);
+        }
+
+        void RollOrder()
+        {
+            order = new[] { 0, 1, 2 };
+            for (int i = order.Length - 1; i > 0; i--)
+            {
+                int j = UnityEngine.Random.Range(0, i + 1);
+                (order[i], order[j]) = (order[j], order[i]);
+            }
         }
 
         string FormatTime(float seconds)
@@ -636,13 +663,31 @@ namespace Gamejam2026
             if (atmosphere) atmosphere.Finish(success);
             if (!success) PlaySfx(jumpScareClip);
             hitchUntil = 0f;
-            Time.timeScale = 0f;
+            HoldClock();
             LockPointer();
             RoundFinished?.Invoke(success);
         }
 
         void PlaySfx(AudioClip clip)
         {
+            if (!clip || !sfxSource) return;
+            bool scare = clip == jumpScareClip;
+            if (!LanEcho.Applying || scare) sfxSource.PlayOneShot(clip, sfxVolume);
+            if (!LanEcho.Applying && LanAuthority.IsHost && !scare) LanSession.BroadcastSfx(SfxId(clip));
+        }
+
+        byte SfxId(AudioClip clip)
+        {
+            if (clip == dangerClip) return 0;
+            if (clip == errorClip) return 1;
+            if (clip == gearsClip) return 2;
+            if (clip == lightClip) return 3;
+            return 255;
+        }
+
+        public void PlayRelayedSfx(byte id)
+        {
+            AudioClip clip = id == 0 ? dangerClip : id == 1 ? errorClip : id == 2 ? gearsClip : id == 3 ? lightClip : null;
             if (clip && sfxSource) sfxSource.PlayOneShot(clip, sfxVolume);
         }
 
@@ -655,7 +700,7 @@ namespace Gamejam2026
 
         void OnApplicationFocus(bool focus)
         {
-            if (!focus && Playing) PauseNow();
+            if (!focus && Playing && !LanAuthority.InSession) PauseNow();
         }
 
         public void Restart()
@@ -663,7 +708,13 @@ namespace Gamejam2026
             if (transitioning) return;
             transitioning = true;
             Time.timeScale = 1f;
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            StartCoroutine(ReloadClean());
+        }
+
+        IEnumerator ReloadClean()
+        {
+            yield return LanFlow.ShutdownAndWait();
+            if (this) SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
         void OnDestroy()
@@ -671,29 +722,66 @@ namespace Gamejam2026
             Time.timeScale = 1f;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+            LanFlow.ShutdownImmediate();
+            LanFlow.Detach(this);
             if (grain) Destroy(grain);
             if (vignette) Destroy(vignette);
             if (errorClip) Destroy(errorClip);
         }
 
-        void PauseNow()
+        public void PauseNow()
         {
+            if (!started || finished) return;
+            if (LanAuthority.IsClientView && !LanEcho.Applying)
+            {
+                LanFlow.RequestPause(true);
+                return;
+            }
             paused = true;
             hitchUntil = 0f;
-            Time.timeScale = 0f;
+            HoldClock();
             LockPointer();
+        }
+
+        public void ResumeNow()
+        {
+            Continue();
         }
 
         void Continue()
         {
+            if (LanFlow.PeerLost) return;
+            if (LanAuthority.IsClientView && !LanEcho.Applying)
+            {
+                LanFlow.RequestPause(false);
+                return;
+            }
             paused = false;
             inputResumeFrame = Time.frameCount;
-            Time.timeScale = 1f;
+            HoldClock();
             LockPointer();
+        }
+
+        void HoldClock()
+        {
+            // En LAN el reloj de Unity sigue en 1: la pausa la marca Playing, no timeScale.
+            if (LanAuthority.LanMatch)
+            {
+                Time.timeScale = 1f;
+                return;
+            }
+            Time.timeScale = paused || finished ? 0f : 1f;
         }
 
         void Retry()
         {
+            if (LanAuthority.LanMatch || LanAuthority.InSession)
+            {
+                Memory.AutoStart = false;
+                SaveNames();
+                Restart();
+                return;
+            }
             Memory.AutoStart = true;
             SaveNames();
             Restart();
@@ -809,6 +897,7 @@ namespace Gamejam2026
             pulseText = text;
             pulsePriority = priority;
             pulseUntil = Time.time + 1.6f;
+            if (!LanEcho.Applying && LanAuthority.IsHost) LanSession.BroadcastPulse(text, priority);
         }
 
         void NoteDangerBand()
@@ -928,7 +1017,7 @@ namespace Gamejam2026
         {
             optionsOpen = false;
             SaveAudio();
-            focusIndex = overlay == 1 ? 1 : 3;
+            focusIndex = overlay == 1 ? 1 : 5;
             hover = -1;
         }
 
@@ -974,8 +1063,13 @@ namespace Gamejam2026
 
         int ItemCount(int id)
         {
+            if (id == 0 && lanMenu != NetMenu.None)
+            {
+                RebuildLanItems();
+                return netCount;
+            }
             if (optionsOpen && (id == 0 || id == 1)) return 7;
-            if (id == 0) return 5;
+            if (id == 0) return 7;
             if (id == 1) return 4;
             if (id == 2) return 3;
             return 0;
@@ -1015,6 +1109,11 @@ namespace Gamejam2026
 
         void OnNameCharacter(char character)
         {
+            if (keyboardEdit && IpSlot(focusIndex))
+            {
+                if (character == '.' || char.IsDigit(character)) InsertIp(character);
+                return;
+            }
             if (!keyboardEdit || optionsOpen || overlay != 0 || focusIndex > 1 || char.IsControl(character)) return;
             Keyboard keyboard = Keyboard.current;
             if (keyboard != null)
@@ -1042,8 +1141,21 @@ namespace Gamejam2026
             {
                 if (editing) { StopEdit(true); return; }
                 if (optionsOpen) { CloseOptions(); return; }
+                if (lanMenu != NetMenu.None && overlay == 0)
+                {
+                    LanFlow.Cancel();
+                    lanMenu = NetMenu.None;
+                    focusIndex = 2;
+                    return;
+                }
                 if (overlay == 1 && escape)
                 {
+                    if (LanFlow.PeerLost)
+                    {
+                        focusIndex = 2;
+                        Queue(MenuCommand.MainMenu);
+                        return;
+                    }
                     focusIndex = 0;
                     Queue(MenuCommand.Continue);
                 }
@@ -1067,10 +1179,10 @@ namespace Gamejam2026
                     if (advance) MoveFocus(1);
                     return;
                 }
-                if (enter && NameSlot(focusIndex))
+                if (enter && (NameSlot(focusIndex) || IpSlot(focusIndex)))
                 {
                     keyboardEdit = true;
-                    caret = NameOf(focusIndex).Length;
+                    caret = IpSlot(focusIndex) ? lanIp.Length : NameOf(focusIndex).Length;
                     return;
                 }
                 ActivateFocused();
@@ -1133,13 +1245,20 @@ namespace Gamejam2026
             }
             if (overlay == 0)
             {
+                if (lanMenu != NetMenu.None)
+                {
+                    ActivateLan();
+                    return;
+                }
                 if (focusIndex == 2) Queue(MenuCommand.Begin);
-                else if (focusIndex == 3) OpenOptions();
-                else if (focusIndex == 4) Queue(MenuCommand.Quit);
+                else if (focusIndex == 3) OpenHost();
+                else if (focusIndex == 4) OpenJoin();
+                else if (focusIndex == 5) OpenOptions();
+                else if (focusIndex == 6) Queue(MenuCommand.Quit);
             }
             else if (overlay == 1)
             {
-                if (focusIndex == 0) Queue(MenuCommand.Continue);
+                if (focusIndex == 0 && !LanFlow.PeerLost) Queue(MenuCommand.Continue);
                 else if (focusIndex == 1) OpenOptions();
                 else if (focusIndex == 2) Queue(MenuCommand.MainMenu);
                 else Queue(MenuCommand.Quit);
@@ -1162,7 +1281,12 @@ namespace Gamejam2026
 
         bool NameSlot(int index)
         {
-            return !optionsOpen && overlay == 0 && index >= 0 && index < 2;
+            return lanMenu == NetMenu.None && !optionsOpen && overlay == 0 && index >= 0 && index < 2;
+        }
+
+        bool IpSlot(int index)
+        {
+            return lanMenu == NetMenu.Join && index >= 0 && index < netCount && netItems[index].field;
         }
 
         string NameOf(int index)
@@ -1191,7 +1315,15 @@ namespace Gamejam2026
 
         void Paste()
         {
-            if (!keyboardEdit || !NameSlot(focusIndex)) return;
+            if (!keyboardEdit) return;
+            if (IpSlot(focusIndex))
+            {
+                string raw = GUIUtility.systemCopyBuffer ?? "";
+                for (int i = 0; i < raw.Length; i++)
+                    if (raw[i] == '.' || char.IsDigit(raw[i])) InsertIp(raw[i]);
+                return;
+            }
+            if (!NameSlot(focusIndex)) return;
             string clip = Sanitize(GUIUtility.systemCopyBuffer ?? "");
             if (clip.Length == 0) return;
             string value = NameOf(focusIndex);
@@ -1206,6 +1338,15 @@ namespace Gamejam2026
 
         void BackspaceActive()
         {
+            if (IpSlot(focusIndex))
+            {
+                if (caret <= 0 || lanIp.Length == 0) return;
+                caret = Mathf.Clamp(caret, 0, lanIp.Length);
+                caret--;
+                lanIp = lanIp.Remove(caret, 1);
+                caret = Mathf.Clamp(caret, 0, lanIp.Length);
+                return;
+            }
             if (!NameSlot(focusIndex)) return;
             string value = NameOf(focusIndex);
             caret = Mathf.Clamp(caret, 0, value.Length);
@@ -1216,6 +1357,13 @@ namespace Gamejam2026
 
         void DeleteForward()
         {
+            if (IpSlot(focusIndex))
+            {
+                caret = Mathf.Clamp(caret, 0, lanIp.Length);
+                if (caret >= lanIp.Length) return;
+                lanIp = lanIp.Remove(caret, 1);
+                return;
+            }
             if (!NameSlot(focusIndex)) return;
             string value = NameOf(focusIndex);
             caret = Mathf.Clamp(caret, 0, value.Length);
@@ -1225,6 +1373,11 @@ namespace Gamejam2026
 
         void MoveCaret(int direction)
         {
+            if (IpSlot(focusIndex))
+            {
+                caret = Mathf.Clamp(caret + direction, 0, lanIp.Length);
+                return;
+            }
             string value = NameOf(focusIndex);
             caret = Mathf.Clamp(caret + direction, 0, value.Length);
         }
@@ -1345,6 +1498,7 @@ namespace Gamejam2026
                     if (optionsOpen != optionsBeforePointer) LayoutOverlay(width, height);
                     DrawBackdrop(width, height);
                     if (optionsOpen) DrawOptions();
+                    else if (overlay == 0 && lanMenu != NetMenu.None) DrawLan();
                     else if (overlay == 0) DrawTitle();
                     else DrawSimple();
                 }
@@ -1364,6 +1518,7 @@ namespace Gamejam2026
             float x = side ? Mathf.Max(40f, width * 0.055f) : (width - columnW) * 0.5f;
             columnRect = new Rect(x, 0f, columnW, height);
             if (optionsOpen) LayoutOptions(x, columnW, height);
+            else if (overlay == 0 && lanMenu != NetMenu.None) LayoutLan(x, columnW, height);
             else if (overlay == 0) LayoutTitle(x, columnW, height);
             else LayoutSimple(x, columnW, height);
         }
@@ -1375,18 +1530,20 @@ namespace Gamejam2026
             y = titleRect.yMax + 16f;
             briefRect = new Rect(x, y, columnW, 64f);
             y = briefRect.yMax + 18f;
-            hitCount = 5;
+            hitCount = 7;
             for (int i = 0; i < 2; i++)
             {
-                hits[i] = new Rect(x, y, columnW, 66f);
-                visuals[i] = new Rect(x + 16f, y + 22f, columnW - 16f, 44f);
-                y = hits[i].yMax + 12f;
+                hits[i] = new Rect(x, y, columnW, 58f);
+                visuals[i] = new Rect(x + 16f, y + 20f, columnW - 16f, 38f);
+                y = hits[i].yMax + 8f;
             }
-            y += 8f;
-            hits[2] = visuals[2] = new Rect(x, y, columnW, 46f);
-            hits[3] = visuals[3] = new Rect(x, hits[2].yMax + 6f, columnW, 46f);
-            hits[4] = visuals[4] = new Rect(x, hits[3].yMax + 6f, columnW, 46f);
-            statusRect = new Rect(x, hits[4].yMax + 14f, columnW, 36f);
+            y += 4f;
+            for (int i = 2; i <= 6; i++)
+            {
+                hits[i] = visuals[i] = new Rect(x, y, columnW, 40f);
+                y += 44f;
+            }
+            statusRect = new Rect(x, y + 4f, columnW, 52f);
             float helpTop = statusRect.yMax + 4f;
             float helpBottom = height - 28f;
             helpRect = new Rect(x, helpTop, columnW, Mathf.Max(48f, helpBottom - helpTop));
@@ -1453,11 +1610,11 @@ namespace Gamejam2026
                 SetOption(hover, SliderAmount(hits[hover], gui.x));
                 return;
             }
-            if (NameSlot(hover))
+            if (NameSlot(hover) || IpSlot(hover))
             {
                 if (keyboardEdit) SaveNames();
                 keyboardEdit = true;
-                caret = CaretFromMouse(visuals[hover], NameOf(hover), gui.x);
+                caret = CaretFromMouse(visuals[hover], IpSlot(hover) ? lanIp : NameOf(hover), gui.x);
                 return;
             }
 
@@ -1551,9 +1708,11 @@ namespace Gamejam2026
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
             DrawChoice(hits[2], "INICIAR EXPEDICIÓN", 2, false, false, false);
-            DrawChoice(hits[3], "OPCIONES", 3, false, false, false);
-            DrawChoice(hits[4], "SALIR", 4, false, false, false);
-            Label(statusRect, "Dos jugadores en un teclado compartido.", smallStyle, Ash);
+            DrawChoice(hits[3], "CREAR PARTIDA LAN", 3, false, false, false);
+            DrawChoice(hits[4], "UNIRSE A PARTIDA", 4, false, false, false);
+            DrawChoice(hits[5], "OPCIONES", 5, false, false, false);
+            DrawChoice(hits[6], "SALIR", 6, false, false, false);
+            Label(statusRect, "Local: dos personas, un teclado. LAN: un operario por PC, en la misma red.", smallStyle, Ash);
             Label(helpRect, HelpText(), smallStyle, Ash);
         }
 
@@ -1601,7 +1760,7 @@ namespace Gamejam2026
             Label(briefRect, body, bodyStyle, Idle);
             if (overlay == 1)
             {
-                DrawChoice(hits[0], "CONTINUAR", 0, false, false, false);
+                DrawChoice(hits[0], "CONTINUAR", 0, LanFlow.PeerLost, false, false);
                 DrawChoice(hits[1], "OPCIONES", 1, false, false, false);
                 DrawChoice(hits[2], "VOLVER AL MENÚ", 2, false, false, false);
                 DrawChoice(hits[3], "SALIR", 3, false, false, false);
@@ -1609,10 +1768,12 @@ namespace Gamejam2026
             }
             else
             {
-                DrawChoice(hits[0], "VOLVER A INTENTAR", 0, false, false, false);
+                DrawChoice(hits[0], LanAuthority.LanMatch ? "CERRAR SALA" : "VOLVER A INTENTAR", 0, false, false, false);
                 DrawChoice(hits[1], "VOLVER AL MENÚ", 1, false, false, false);
                 DrawChoice(hits[2], "SALIR", 2, false, false, false);
-                Label(statusRect, "Reintentar conserva los nombres y empieza de nuevo.", smallStyle, Ash);
+                Label(statusRect, LanAuthority.LanMatch
+                    ? "Cerrar la sala termina la conexión. Otra expedición se crea desde el menú."
+                    : "Reintentar conserva los nombres y empieza de nuevo.", smallStyle, Ash);
             }
             Label(helpRect, HelpText(), smallStyle, Ash);
         }
@@ -1703,19 +1864,32 @@ namespace Gamejam2026
 
         void DrawHud(float width, float height)
         {
-            Box(new Rect(width * 0.5f - 1f, 0f, 2f, height), Color.black);
+            bool lan = LanAuthority.LanMatch;
+            if (!lan) Box(new Rect(width * 0.5f - 1f, 0f, 2f, height), Color.black);
             for (int i = 0; i < players.Length; i++)
             {
                 var player = players[i];
                 if (!player) continue;
-                float left = i * width * 0.5f;
-                float half = width * 0.5f;
+                if (lan && player.playerIndex != LanAuthority.LocalSlot) continue;
+                float left = lan ? 0f : i * width * 0.5f;
+                float half = lan ? width : width * 0.5f;
                 float x = left + 16f;
                 float panelWidth = half - 32f;
                 float top = 12f;
                 bool threatVisible = elapsed < threatUntil && !string.IsNullOrEmpty(threatText);
                 string held = player.Held ? player.Held.displayName : "manos libres";
-                string identity = "J" + (player.playerIndex + 1) + "  " + PlayerLabel(i) + "  /  " + held;
+                string identity;
+                if (lan)
+                {
+                    int other = 1 - player.playerIndex;
+                    string mine = player.playerIndex == 0 ? "operario 1 · vela" : "operario 2 · manivela";
+                    string theirs = other == 0 ? "operario 1 · vela" : "operario 2 · manivela";
+                    string otherHeld = players[other] && players[other].Held ? players[other].Held.displayName : "manos libres";
+                    identity = "Tú · " + mine + " · " + PlayerLabel(player.playerIndex) + "  /  " + held
+                        + "\nCompañero · " + theirs + " · " + PlayerLabel(other) + "  /  " + otherHeld
+                        + "\nEste PC: WASD, ratón, E, Q, Shift. Esc pausa.";
+                }
+                else identity = "J" + (player.playerIndex + 1) + "  " + PlayerLabel(i) + "  /  " + held;
                 top += DrawHudPanel(x, top, panelWidth, identity + "\n" + ImmediateObjective(), hudStyle, Paper);
 
                 if (threatVisible)
@@ -1750,7 +1924,7 @@ namespace Gamejam2026
                 Box(new Rect(centerX - 0.5f, centerY - 7f, 1f, 14f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
 
                 float bottom = height - 16f;
-                string prompt = player.Hint;
+                string prompt = player.ViewHint;
                 if (!string.IsNullOrEmpty(player.DropHint))
                     prompt = string.IsNullOrEmpty(prompt) ? player.DropHint : prompt + "\n" + player.DropHint;
                 if (!string.IsNullOrEmpty(prompt))
@@ -1786,7 +1960,9 @@ namespace Gamejam2026
 
         string PauseBody()
         {
+            if (LanFlow.PeerLost) return LanFlow.PeerMessage + "\nPuedes volver al menú. La expedición no continúa.";
             string who = "Expedición de " + PlayerLabel(0) + " y " + PlayerLabel(1) + ".";
+            if (LanAuthority.LanMatch) who += "\nSala LAN. Tú eres el operario " + (LanAuthority.LocalSlot + 1) + ".";
             return who + "\nLa expedición está detenida.";
         }
 
@@ -1802,6 +1978,8 @@ namespace Gamejam2026
         {
             if (optionsOpen)
                 return "Flechas, stick o ratón. Esc o B vuelven.\n" + GameplayHelp;
+            if (lanMenu != NetMenu.None)
+                return "Flechas o ratón. Enter confirma. Esc cierra la sala o cancela.\nINICIAR EXPEDICIÓN sigue siendo la partida local de este PC. En LAN cada persona usa WASD, ratón, E, Q y Shift.";
             if (overlay == 0 && keyboardEdit)
                 return "Escribiendo. Enter confirma el nombre. Esc sale del campo. Ctrl+V pega.\n" + GameplayHelp;
             if (overlay == 0)
@@ -1979,6 +2157,315 @@ namespace Gamejam2026
             texture.SetPixels32(pixels);
             texture.Apply(false, true);
             return texture;
+        }
+
+        public string CrewName(int index)
+        {
+            return PlayerLabel(index);
+        }
+
+        public void SetCrewNames(string hostName, string clientName)
+        {
+            name1 = Sanitize(hostName);
+            name2 = Sanitize(clientName);
+            StoreNames();
+        }
+
+        public void RebuildFromSeed(int seed)
+        {
+            ResetMatchScalars();
+            if (Investigation)
+            {
+                Investigation.Retire();
+                Destroy(Investigation);
+                Investigation = null;
+            }
+            var items = FindObjectsByType<CarryObject>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var item in items) if (item) item.RestoreHome();
+            if (mechanisms != null)
+                foreach (var mechanism in mechanisms) if (mechanism) mechanism.ResetExpedition();
+            UnityEngine.Random.InitState(seed);
+            RollOrder();
+            EquipCrew();
+            Investigation = gameObject.AddComponent<RecintoInvestigation>();
+            Investigation.Initialize(this);
+            ResetLearningTips();
+        }
+
+        public void EnterLanPlay()
+        {
+            lanBeginArmed = true;
+            LanFlow.MarkPlaying();
+            ApplyLanCameras();
+            Begin();
+        }
+
+        public void PauseForPeer()
+        {
+            if (!started || finished) return;
+            paused = true;
+            hitchUntil = 0f;
+            HoldClock();
+            LockPointer();
+        }
+
+        public void PresentShock()
+        {
+            if (atmosphere) atmosphere.WrongOrder();
+            if (!LanEcho.Applying && LanAuthority.IsHost) LanSession.BroadcastShock();
+        }
+
+        public void PresentContact()
+        {
+            contactFlashUntil = elapsed + .08f;
+            if (players != null)
+                foreach (var player in players)
+                {
+                    if (!player) continue;
+                    var motion = player.GetComponent<DemoMotion>();
+                    if (motion) motion.Recoil();
+                }
+            if (atmosphere) atmosphere.WrongOrder();
+        }
+
+        public void CopyReplicaClock(out float clock, out float danger, out float candle, out float containment, out bool contain, out float disturbanceLeft, out int seals, out int contacts)
+        {
+            clock = elapsed;
+            danger = Danger;
+            candle = CandleCharge;
+            containment = Containment01;
+            contain = Containing;
+            disturbanceLeft = Mathf.Max(0f, disturbanceUntil - elapsed);
+            seals = completed;
+            contacts = ShadowContacts;
+        }
+
+        public void ApplyReplicaClock(float clock, float danger, float candle, float containment, bool contain, float disturbanceLeft, int seals, int contacts)
+        {
+            elapsed = clock;
+            Danger = danger;
+            CandleCharge = candle;
+            Containment01 = containment;
+            Containing = contain;
+            disturbanceUntil = elapsed + Mathf.Max(0f, disturbanceLeft);
+            bool first = completed == 0 && seals > 0;
+            completed = seals;
+            ShadowContacts = contacts;
+            if (!first || mechanisms == null) return;
+            foreach (var mechanism in mechanisms)
+                if (mechanism && mechanism.done)
+                {
+                    FirstMechanismCompleted?.Invoke(mechanism);
+                    break;
+                }
+        }
+
+        public void ApplyReplicaPause(bool value)
+        {
+            if (finished || LanFlow.PeerLost || value == paused) return;
+            LanEcho.Apply(() => { if (value) PauseNow(); else Continue(); });
+        }
+
+        public void ApplyReplicaFinish(bool success, string cause)
+        {
+            if (finished) return;
+            if (!string.IsNullOrEmpty(cause)) DefeatCause = cause;
+            LanEcho.Apply(() => Finish(success));
+        }
+
+        void ResetMatchScalars()
+        {
+            started = false;
+            paused = false;
+            finished = false;
+            won = false;
+            lanBeginArmed = false;
+            Danger = 0f;
+            completed = 0;
+            elapsed = 0f;
+            CandleCharge = 1f;
+            Containing = false;
+            Containment01 = 0f;
+            ShadowContacts = 0;
+            DefeatCause = "errores de procedimiento";
+            nextDestabilize = -1f;
+            nextDisturbance = 12f;
+            disturbanceUntil = 0f;
+            threatText = "";
+            threatUntil = 0f;
+            contactFlashUntil = 0f;
+            hitchUntil = 0f;
+            hitchSpent = false;
+            dangerBand = -1;
+            pulseText = "";
+            pulseUntil = 0f;
+            HoldClock();
+        }
+
+        void ApplyLanCameras()
+        {
+            if (players == null) return;
+            int slot = LanAuthority.LocalSlot;
+            AudioListener kept = null;
+            foreach (var player in players)
+            {
+                if (!player || !player.view) continue;
+                bool mine = player.playerIndex == slot;
+                player.view.enabled = mine;
+                if (mine) player.view.rect = new Rect(0f, 0f, 1f, 1f);
+                var listener = player.view.GetComponent<AudioListener>();
+                if (listener) listener.enabled = mine;
+                if (mine) kept = listener;
+                if (!LanAuthority.IsClientView) continue;
+                var body = player.GetComponent<CharacterController>();
+                if (body) body.enabled = false;
+            }
+            DemoPlayer local = null;
+            foreach (var player in players)
+                if (player && player.playerIndex == slot) local = player;
+            if (kept == null && local && local.view)
+            {
+                kept = local.view.GetComponent<AudioListener>();
+                if (!kept) kept = local.view.gameObject.AddComponent<AudioListener>();
+                kept.enabled = true;
+            }
+        }
+
+        void OpenHost()
+        {
+            StopEdit(true);
+            lanMenu = NetMenu.Host;
+            focusIndex = 0;
+            keyboardEdit = false;
+            LanFlow.StartHost(this);
+        }
+
+        void OpenJoin()
+        {
+            StopEdit(true);
+            lanMenu = NetMenu.Join;
+            focusIndex = 0;
+            keyboardEdit = false;
+            LanFlow.ArmJoin();
+        }
+
+        void ActivateLan()
+        {
+            if (focusIndex < 0 || focusIndex >= netCount) return;
+            NetItem item = netItems[focusIndex];
+            if (item.disabled || item.field) return;
+            if (item.action == 0)
+            {
+                LanFlow.ToggleReady();
+                return;
+            }
+            if (item.action == 2)
+            {
+                LanFlow.Connect(lanIp, this);
+                return;
+            }
+            LanFlow.Cancel();
+            lanMenu = NetMenu.None;
+            focusIndex = 2;
+        }
+
+        void RebuildLanItems()
+        {
+            netCount = 0;
+            if (lanMenu == NetMenu.None) return;
+            LanFlow.Phase phase = LanFlow.Current;
+            if (lanMenu == NetMenu.Host)
+            {
+                if (phase == LanFlow.Phase.Error) { AddNet("VOLVER", 4, false, false); return; }
+                if (phase == LanFlow.Phase.Waiting || phase == LanFlow.Phase.Lobby)
+                    AddNet(LanFlow.LocalReady ? "CANCELAR LISTO" : "ESTOY LISTO", 0, phase != LanFlow.Phase.Lobby, false);
+                if (phase != LanFlow.Phase.Playing)
+                    AddNet(phase == LanFlow.Phase.Preparing ? "CANCELAR PREPARACIÓN" : "CERRAR SALA", 1, false, false);
+                return;
+            }
+            if (phase == LanFlow.Phase.Error) { AddNet("VOLVER", 4, false, false); return; }
+            if (phase == LanFlow.Phase.Connecting || phase == LanFlow.Phase.Preparing)
+            {
+                AddNet("CANCELAR", 3, false, false);
+                return;
+            }
+            if (phase == LanFlow.Phase.Lobby)
+            {
+                AddNet(LanFlow.LocalReady ? "CANCELAR LISTO" : "ESTOY LISTO", 0, false, false);
+                AddNet("SALIR DE LA SALA", 3, false, false);
+                return;
+            }
+            AddNet("IP", 2, false, true);
+            AddNet("CONECTAR", 2, false, false);
+            AddNet("VOLVER", 4, false, false);
+        }
+
+        void AddNet(string label, int action, bool disabled, bool field)
+        {
+            if (netCount >= netItems.Length) return;
+            netItems[netCount++] = new NetItem { label = label, action = action, disabled = disabled, field = field };
+        }
+
+        void InsertIp(char character)
+        {
+            caret = Mathf.Clamp(caret, 0, lanIp.Length);
+            if (lanIp.Length >= 15) return;
+            lanIp = lanIp.Insert(caret, character.ToString());
+            caret++;
+        }
+
+        void LayoutLan(float x, float columnW, float height)
+        {
+            RebuildLanItems();
+            float y = Mathf.Max(height * 0.06f, 28f);
+            titleRect = new Rect(x, y, columnW, 56f);
+            y = titleRect.yMax + 8f;
+            briefRect = new Rect(x, y, columnW, 96f);
+            y = briefRect.yMax + 12f;
+            hitCount = netCount;
+            for (int i = 0; i < netCount; i++)
+            {
+                float row = netItems[i].field ? 58f : 42f;
+                hits[i] = new Rect(x, y, columnW, row);
+                visuals[i] = netItems[i].field ? new Rect(x + 16f, y + 18f, columnW - 16f, 36f) : hits[i];
+                y += row + 8f;
+            }
+            statusRect = new Rect(x, y + 8f, columnW, 120f);
+            helpRect = new Rect(x, statusRect.yMax + 4f, columnW, Mathf.Max(36f, height - 24f - statusRect.yMax));
+        }
+
+        void DrawLan()
+        {
+            string title = lanMenu == NetMenu.Host ? "Crear partida" : "Unirse";
+            DrawTracked(titleRect, title, glyphStyle, 6f, Paper);
+            Rule(titleRect.center.x, titleRect.yMax + 2f, 140f);
+            Label(briefRect, string.IsNullOrEmpty(LanFlow.Banner) ? "Partida en la red local." : LanFlow.Banner, bodyStyle, Ash);
+            for (int i = 0; i < netCount; i++)
+            {
+                if (netItems[i].field) DrawIp(i);
+                else DrawChoice(hits[i], netItems[i].label, i, netItems[i].disabled, false, false);
+            }
+            string detail = LanFlow.Detail;
+            if (!string.IsNullOrEmpty(LanFlow.FormError) && LanFlow.Current == LanFlow.Phase.Idle)
+                detail = LanFlow.FormError + (string.IsNullOrEmpty(detail) ? "" : "\n" + detail);
+            Label(statusRect, detail, smallStyle, LanFlow.Current == LanFlow.Phase.Error ? Accent : Ash);
+            Label(helpRect, HelpText(), smallStyle, Ash);
+        }
+
+        void DrawIp(int index)
+        {
+            bool focused = focusIndex == index;
+            bool editing = focused && keyboardEdit;
+            Rect box = visuals[index];
+            Label(new Rect(box.x, hits[index].y, box.width, 18f), editing ? "IP del anfitrión    editando" : "IP del anfitrión", captionStyle, focused ? Paper : Ash);
+            Frame(box, focused ? Paper : new Color(0.30f, 0.28f, 0.25f, 1f), new Color(0.04f, 0.04f, 0.035f, 0.96f));
+            Rect text = new Rect(box.x + 12f, box.y, box.width - 24f, box.height);
+            if (string.IsNullOrEmpty(lanIp) && !editing) Label(text, "192.168.1.20", fieldStyle, DisabledInk);
+            else Label(text, lanIp, fieldStyle, Paper);
+            if (!editing) return;
+            caret = Mathf.Clamp(caret, 0, lanIp.Length);
+            float caretX = text.x + fieldStyle.CalcSize(new GUIContent(lanIp.Substring(0, caret))).x;
+            Box(new Rect(caretX, box.y + 8f, 2f, box.height - 16f), Paper);
         }
 
         static string Sanitize(string value)

@@ -117,18 +117,43 @@ namespace Gamejam2026
             }
             if (held && player.playerIndex >= 0 && player.playerIndex < 2) heldFrame[player.playerIndex] = Time.frameCount;
         }
+        public void RefreshLabel() { UpdateLabel(); }
+        public void CaptureReplica(out float prog, out float seconds, out byte flags)
+        {
+            prog = progress;
+            seconds = SecondsLeft;
+            flags = 0;
+            if (complete) flags |= 1;
+            if (surveyed) flags |= 2;
+            if (betrayed) flags |= 4;
+            if (workLight && workLight.enabled) flags |= 8;
+        }
+        public void ApplyReplica(float prog, float seconds, byte flags)
+        {
+            progress = prog;
+            complete = (flags & 1) != 0;
+            surveyed = (flags & 2) != 0;
+            betrayed = (flags & 4) != 0;
+            if (lamp && director) lamp.sharedMaterial = complete ? director.ActiveLamp : director.DarkLamp;
+            if (workLight) workLight.enabled = (flags & 8) != 0;
+            if (IsPowerOn) expires = game.ElapsedSeconds + seconds;
+            UpdateLabel();
+        }
         void Update()
         {
             if (!game || !game.Playing) return;
-            if (IsPowerOn)
+            if (LanAuthority.Simulates && IsPowerOn && !betrayed && SecondsLeft <= 0)
             {
-                if (!betrayed && SecondsLeft <= 0) { betrayed = true; director.LightBetrayed(this); }
-                workLight.intensity = betrayed || SecondsLeft < 8 ? (Mathf.Sin(game.ElapsedSeconds * 27) > -.3f ? 2.7f : .08f) : 2.7f;
+                betrayed = true;
+                director.LightBetrayed(this);
             }
+            if (IsPowerOn && workLight)
+                workLight.intensity = betrayed || SecondsLeft < 8 ? (Mathf.Sin(game.ElapsedSeconds * 27) > -.3f ? 2.7f : .08f) : 2.7f;
             UpdateLabel();
         }
         void LateUpdate()
         {
+            if (!LanAuthority.Simulates) return;
             for (int i = 0; i < contrastHolding.Length; i++)
                 contrastHolding[i] = game && game.PlayerInputEnabled && heldFrame[i] == Time.frameCount;
             if (!AcceptsWork || !game || !game.Playing || (role == Role.Evidence && !holdEvidence)) return;

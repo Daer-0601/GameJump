@@ -33,7 +33,11 @@ namespace Gamejam2026
         public DemoMechanism Stabilizing { get; private set; }
         public DemoMechanism FocusedMechanism { get; private set; }
         public bool Working { get; private set; }
-        public float ActualSpeed => controller ? Vector3.ProjectOnPlane(controller.velocity, Vector3.up).magnitude : 0f;
+        public float PresentedSpeed { get; private set; }
+        public float Pitch => pitch;
+        public float ActualSpeed => LanAuthority.IsClientView ? PresentedSpeed
+            : controller && controller.enabled ? Vector3.ProjectOnPlane(controller.velocity, Vector3.up).magnitude : PresentedSpeed;
+        public string ViewHint => LanAuthority.IsClientView ? replicaHint : Hint;
         [Range(0f, 0.03f)] public float shakeAtFullDanger = 0.01f;
         [Range(0f, 0.04f)] public float shakeAtCritical = 0.018f;
         Vector3 viewRest;
@@ -60,6 +64,11 @@ namespace Gamejam2026
         DemoMechanism crankTarget;
         Vector2 lookVelocity;
         const float FootstepInterval = 0.42f;
+        string replicaHint = "";
+        Vector3 targetPos;
+        float targetYaw;
+        float targetPitch;
+        bool hasPose;
         public void ConfigureCamera(Vector3 position)
         {
             thirdRest = position;
@@ -194,10 +203,41 @@ namespace Gamejam2026
             readingClue = null;
             Message = text;
             MessageUntil = Time.unscaledTime + seconds;
+            if (!LanEcho.Applying && LanAuthority.IsHost && (game == null || !game.TalkingNested))
+                LanSession.BroadcastTell(playerIndex, text, seconds);
+        }
+
+        public void SetReplicaFocus(string hint, DemoMechanism mechanism, RecintoStation station, bool working, bool stabilizing, bool needsHand)
+        {
+            replicaHint = hint ?? "";
+            FocusedMechanism = mechanism;
+            FocusedStation = station;
+            Working = working;
+            Stabilizing = stabilizing ? mechanism : null;
+            NeedsFreeHand = needsHand;
+        }
+
+        public void SetReplicaPose(Vector3 position, float yaw, float lookPitch, bool snap)
+        {
+            targetPos = position;
+            targetYaw = yaw;
+            targetPitch = lookPitch;
+            hasPose = true;
+            if (!snap) return;
+            Vector3 previous = transform.position;
+            transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+            pitch = lookPitch;
+            float step = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.033f;
+            PresentedSpeed = Vector3.ProjectOnPlane(position - previous, Vector3.up).magnitude / step;
         }
 
         void Update()
         {
+            if (LanAuthority.IsClientView)
+            {
+                PresentReplica();
+                return;
+            }
             if (readingClue)
             {
                 if (!readingClue.TryRead(game, out string text))
@@ -220,15 +260,44 @@ namespace Gamejam2026
                 lookVelocity = Vector2.zero;
                 return;
             }
-            var input = DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime, preciseLookMultiplier);
-            Look(input.Look);
+            DemoPlayerInput.State input = LanAuthority.LanMatch
+                ? (playerIndex == 0
+                    ? DemoPlayerInput.Read(0, keyboardLookSpeed, mouseSensitivity, Time.deltaTime, preciseLookMultiplier)
+                    : LanFlow.ConsumeRemote())
+                : DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime, preciseLookMultiplier);
+            Look(input.Look, !LanAuthority.LanMatch && playerIndex == 1);
             Interact(input.Use, input.UseHeld, input.Drop);
             if (game.PlayerInputEnabled) Move(input);
         }
 
-        void Look(Vector2 look)
+        void PresentReplica()
         {
-            if (playerIndex == 1 && Time.deltaTime > 0f)
+            if (!hasPose) return;
+            if (playerIndex != LanAuthority.LocalSlot)
+            {
+                Vector3 previous = transform.position;
+                float blend = 1f - Mathf.Exp(-Time.unscaledDeltaTime / 0.045f);
+                transform.position = Vector3.Lerp(previous, targetPos, blend);
+                float yaw = Mathf.LerpAngle(transform.eulerAngles.y, targetYaw, blend);
+                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+                pitch = Mathf.Lerp(pitch, targetPitch, blend);
+                float step = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
+                PresentedSpeed = Vector3.ProjectOnPlane(transform.position - previous, Vector3.up).magnitude / step;
+            }
+            if (!game || !game.Playing || PresentedSpeed < 0.45f)
+            {
+                footstepTimer = 0f;
+                return;
+            }
+            footstepTimer -= Time.unscaledDeltaTime;
+            if (footstepTimer > 0f) return;
+            game.PlayFootstep(footstepsSource);
+            footstepTimer = FootstepInterval;
+        }
+
+        void Look(Vector2 look, bool ramp)
+        {
+            if (ramp && playerIndex == 1 && Time.deltaTime > 0f)
             {
                 Vector2 target = look / Time.deltaTime;
                 float step = keyboardLookRampTime > 0f

@@ -34,6 +34,13 @@ namespace Gamejam2026
         Vector3 retreatPoint;
         bool retreating, navigating;
         readonly List<Material> shadowMaterials = new List<Material>();
+        readonly List<GameObject> spawned = new List<GameObject>();
+        readonly List<RecintoContamination> growths = new List<RecintoContamination>();
+        int nextGrowth = 1;
+        bool building;
+        bool cleaned;
+        RecintoSound candleLoop;
+        public IReadOnlyList<RecintoContamination> Growths => growths;
         [Range(20f, 90f)] public float firstAppearanceSeconds = 36f;
         [Range(22f, 90f)] public float calmAppearanceSeconds = 50f;
         [Range(16f, 60f)] public float dangerAppearanceSeconds = 28f;
@@ -66,12 +73,18 @@ namespace Gamejam2026
 
         public void Initialize(DemoGame owner)
         {
+            building = true;
             game = owner;
             metal = MakeMaterial("Metal húmedo", new Color(.12f,.13f,.12f)); metal.SetFloat("_Metallic", .65f); metal.SetFloat("_Smoothness", .38f);
             darkLamp = MakeMaterial("Indicador apagado", new Color(.09f,.12f,.09f));
             activeLamp = MakeMaterial("Indicador activo", new Color(.42f,.68f,.35f));
+            Renderer stainRenderer = null;
             foreach (var renderer in FindObjectsByType<Renderer>(FindObjectsInactive.Exclude))
-                if (renderer.name == "Humedad superficial" && renderer.sharedMaterial) { stain = renderer.sharedMaterial; break; }
+            {
+                if (renderer.name != "Humedad superficial" || !renderer.sharedMaterial) continue;
+                if (!stainRenderer || renderer.transform.position.sqrMagnitude < stainRenderer.transform.position.sqrMagnitude) stainRenderer = renderer;
+            }
+            if (stainRenderer) stain = stainRenderer.sharedMaterial;
             if (!stain) { stain = MakeMaterial("Humedad orgánica", new Color(.045f,.065f,.035f)); ownsStain = true; }
             insects = MakeMaterial("Insectos", new Color(.025f,.025f,.018f)); larva = MakeMaterial("Larvas", new Color(.43f,.38f,.27f));
             fright = gameObject.AddComponent<AudioSource>(); fright.playOnAwake = false; fright.spatialBlend = 0;
@@ -79,23 +92,29 @@ namespace Gamejam2026
             if (!threat) threat = gameObject.AddComponent<RecintoThreatPresentation>();
             threat.Bind(game);
             burnClip = Resources.Load<AudioClip>("Production/Burn");
-            var fire = game.candles[0].gameObject.AddComponent<RecintoSound>(); fire.game = game; fire.clips = new[] { burnClip }; fire.loop = true; fire.volume = .035f; fire.radius = 9;
+            candleLoop = game.candles[0].gameObject.AddComponent<RecintoSound>();
+            candleLoop.game = game; candleLoop.clips = new[] { burnClip }; candleLoop.loop = true; candleLoop.volume = .035f; candleLoop.radius = 9;
             RequiredPower = Random.Range(0,3); FalseIndex = Random.Range(0,3); falseMark = game.SymbolAt((FalseIndex + Random.Range(1,3)) % 3);
             var slots = Enumerable.Range(0,Sites.Length).ToList();
             for (int i = slots.Count - 1; i > 0; i--) { int j = Random.Range(0,i+1); int k = slots[i]; slots[i] = slots[j]; slots[j] = k; }
             for (int i = 0; i < 6; i++)
             {
-                var root = new GameObject("Puesto variable"); root.transform.SetParent(transform, false); root.transform.position = Sites[slots[i]];
+                var root = new GameObject("Puesto variable"); Track(root); root.transform.SetParent(transform, false); root.transform.position = Sites[slots[i]];
                 root.transform.rotation = Quaternion.Euler(0, slots[i] % 2 == 0 ? 25 : -35, 0);
                 var station = root.AddComponent<RecintoStation>();
                 station.Configure(this, game, i < 3 ? RecintoStation.Role.Evidence : i == 3 ? RecintoStation.Role.Synchronize : RecintoStation.Role.Power, i, i % 2 == 0);
                 stations.Add(station);
             }
             Contaminate(stations[0]); Contaminate(stations[3]);
-            CreateDecay(Sites[slots[1]] + Vector3.right * 1.2f, 6, null);
-            CreateDecay(Sites[slots[4]] + Vector3.left * 1.2f, 5, null);
+            CreateDecay(Sites[slots[1]] + Vector3.right * 1.2f, 6, null, 0);
+            CreateDecay(Sites[slots[4]] + Vector3.left * 1.2f, 5, null, 0);
             AddExistingClutter(slots); CreateCoveredBodies(); CreateEldritchAnomaly(); PrepareSigns(); CreateShadow(); CreateSeals();
             game.FirstMechanismCompleted += PassageChanged;
+            building = false;
+        }
+        public void Retire()
+        {
+            Cleanup();
         }
         void PassageChanged(DemoMechanism mechanism) { Invoke(nameof(RebuildShadowPath), 1.7f); }
         void RebuildShadowPath() { if (path != null) { path.Build(); route.Clear(); } }
@@ -103,7 +122,7 @@ namespace Gamejam2026
         {
             foreach (var point in new[] { DemoGame.WorkshopSeal, DemoGame.PumpSeal })
             {
-                var root = new GameObject(point == DemoGame.WorkshopSeal ? "Zona de contención TALLER 04" : "Zona de contención BOMBAS 05"); root.transform.SetParent(transform,false); root.transform.position = point;
+                var root = new GameObject(point == DemoGame.WorkshopSeal ? "Zona de contención TALLER 04" : "Zona de contención BOMBAS 05"); Track(root); root.transform.SetParent(transform,false); root.transform.position = point;
                 var line = root.AddComponent<LineRenderer>(); line.useWorldSpace = false; line.positionCount = 5; line.startWidth = line.endWidth = .05f;
                 Bounds room = DemoGame.SealRoom(point == DemoGame.WorkshopSeal);
                 Vector3 a = room.min - point, b = room.max - point;
@@ -115,13 +134,36 @@ namespace Gamejam2026
         public void Contaminate(RecintoStation station)
         {
             if (!station || station.Contaminated) return;
-            var patch = CreateDecay(station.transform.position + station.transform.forward * -.58f, 5, station);
-            station.SetContamination(patch);
+            if (building || !LanAuthority.IsHost || !LanAuthority.LanMatch)
+            {
+                CreateDecay(station.transform.position + station.transform.forward * -.58f, 5, station, 0);
+                return;
+            }
+            int visualSeed = Random.Range(1, int.MaxValue);
+            var state = Random.state;
+            Random.InitState(visualSeed);
+            var patch = CreateDecay(station.transform.position + station.transform.forward * -.58f, 5, station, 0);
+            Random.state = state;
+            LanSession.BroadcastGrowth(stations.IndexOf(station), visualSeed, patch ? patch.ReplicaId : 0);
         }
-        RecintoContamination CreateDecay(Vector3 center, int count, RecintoStation station)
+        public void ContaminateFromNet(int stationIndex, int visualSeed, int id)
         {
-            var patch = new GameObject("Brote quemable"); patch.transform.SetParent(transform,false); patch.transform.position = center;
+            if (stationIndex < 0 || stationIndex >= stations.Count) return;
+            var station = stations[stationIndex];
+            if (!station || station.Contaminated) return;
+            var state = Random.state;
+            Random.InitState(visualSeed);
+            CreateDecay(station.transform.position + station.transform.forward * -.58f, 5, station, id);
+            Random.state = state;
+        }
+        RecintoContamination CreateDecay(Vector3 center, int count, RecintoStation station, int forceId)
+        {
+            var patch = new GameObject("Brote quemable"); Track(patch); patch.transform.SetParent(transform,false); patch.transform.position = center;
             var growth = patch.AddComponent<RecintoContamination>(); growth.game = game; growth.blockedStation = station;
+            growth.ReplicaId = forceId > 0 ? forceId : nextGrowth++;
+            if (growth.ReplicaId >= nextGrowth) nextGrowth = growth.ReplicaId + 1;
+            growths.Add(growth);
+            if (station) station.SetContamination(growth);
             var collider = patch.AddComponent<BoxCollider>(); collider.center = new Vector3(0,.28f,0); collider.size = new Vector3(.85f,.65f,.75f);
             for (int i = 0; i < 4; i++)
             {
@@ -142,7 +184,7 @@ namespace Gamejam2026
         {
             var source = Resources.Load<GameObject>("Production/Shadow");
             if (!source) { Debug.LogError("Falta Production/Shadow; aplica arte desde Gamejam/Producción."); return; }
-            shadow = Instantiate(source,transform); shadow.name = "Sombra - amenaza avisada";
+            shadow = Instantiate(source,transform); Track(shadow); shadow.name = "Sombra - amenaza avisada";
             shadow.transform.position = new Vector3(-13,0,27); shadowAnimator = shadow.GetComponentInChildren<Animator>();
             var crawl = shadow.AddComponent<RecintoSound>(); crawl.game = game;
             var crawlClip = threat && threat.Movement ? threat.Movement : Resources.Load<AudioClip>("Production/Crawl");
@@ -165,6 +207,8 @@ namespace Gamejam2026
         }
         void Update()
         {
+            if (cleaned) return;
+            if (!LanAuthority.Simulates) return;
             if (!game || !game.Playing)
             {
                 if (fright && fright.isPlaying) fright.Stop();
@@ -375,10 +419,27 @@ namespace Gamejam2026
             Sound(game.gearsClip,station.transform.position,.22f); AdvanceShadow("Una luz auxiliar ha delatado la zona.");
         }
         public void BurnSound(Vector3 point) { Sound(burnClip,point,.19f); }
+        public void PlayRelayed(byte id, Vector3 point, float volume)
+        {
+            AudioClip clip = id == 3 ? game.lightClip : id == 2 ? game.gearsClip : id == 5 ? burnClip : null;
+            if (!clip) return;
+            LanEcho.Apply(() => Sound(clip, point, volume));
+        }
         public void Sound(AudioClip clip, Vector3 point, float volume)
         {
-            if (!clip || !fright || !game.Playing) return;
-            var p = game.players.OrderBy(x => Vector3.Distance(x.view.transform.position,point)).First();
+            if (!clip || !fright || !game || !game.Playing) return;
+            byte id = clip == game.lightClip ? (byte)3 : clip == game.gearsClip ? (byte)2 : clip == burnClip ? (byte)5 : (byte)255;
+            if (id != 255 && !LanEcho.Applying && LanAuthority.IsHost) LanSession.BroadcastWorld(id, point, volume);
+            DemoPlayer listener = null;
+            float nearest = float.MaxValue;
+            foreach (var candidate in game.players)
+            {
+                if (!candidate || !candidate.view) continue;
+                float distance = Vector3.Distance(candidate.view.transform.position, point);
+                if (distance < nearest) { nearest = distance; listener = candidate; }
+            }
+            if (!listener) return;
+            var p = listener;
             Vector3 delta = point-p.view.transform.position;
             fright.panStereo = Mathf.Clamp(Vector3.Dot(p.view.transform.right,delta.normalized),-.6f,.6f);
             fright.PlayOneShot(clip,game.sfxVolume * volume * Mathf.Clamp01(1-delta.magnitude/28));
@@ -393,13 +454,90 @@ namespace Gamejam2026
             if (!station) return "";
             Contaminate(station); return "Hay un brote en " + station.name + ".";
         }
-        void OnDestroy()
+        public void CopyEvidence(out byte mask, out bool contrast, out bool revealed)
         {
+            mask = 0;
+            for (int i = 0; i < evidence.Length; i++) if (evidence[i]) mask |= (byte)(1 << i);
+            contrast = synchronized;
+            revealed = FalseRevealed;
+        }
+        public void ApplyEvidence(byte mask, bool contrast, bool revealed)
+        {
+            int count = 0;
+            for (int i = 0; i < evidence.Length; i++)
+            {
+                evidence[i] = (mask & (1 << i)) != 0;
+                if (evidence[i]) count++;
+            }
+            EvidenceCount = count;
+            synchronized = contrast;
+            FalseRevealed = revealed;
+            for (int i = 0; i < stations.Count; i++) if (stations[i]) stations[i].RefreshLabel();
+        }
+        public void CopyAnomalies(out int altered, out bool bodyMoved)
+        {
+            altered = alteredSign;
+            bodyMoved = depotBodyMoved;
+        }
+        public void ApplyAnomalies(int altered, bool bodyMoved)
+        {
+            if (altered != alteredSign)
+            {
+                if (alteredSign >= 0 && alteredSign < signs.Count && signs[alteredSign] && alteredSign < signLabels.Count)
+                    signs[alteredSign].text = signLabels[alteredSign];
+                alteredSign = altered;
+                if (altered >= 0 && altered < signs.Count && signs[altered] && signs.Count > 0)
+                    signs[altered].text = signLabels[(altered + 1) % signs.Count];
+            }
+            if (!bodyMoved || depotBodyMoved || !depotBody) return;
+            var destination = new Vector3(-12.2f, depotBody.transform.position.y, 28f);
+            depotBody.transform.SetPositionAndRotation(destination, Quaternion.Euler(0f, 105f, 0f) * bodyModelRotation);
+            depotBodyMoved = true;
+        }
+        public void CopyShadow(out Vector3 position, out float yaw, out bool moving, out bool exists)
+        {
+            exists = shadow;
+            moving = navigating;
+            position = shadow ? shadow.transform.position : Vector3.zero;
+            yaw = shadow ? shadow.transform.eulerAngles.y : 0f;
+        }
+        public void ApplyShadow(Vector3 position, float yaw, bool moving, bool exists)
+        {
+            if (!exists || !shadow) return;
+            shadow.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+            navigating = moving;
+            if (shadowAnimator)
+            {
+                shadowAnimator.speed = moving ? 1f : 0f;
+                if (moving && !shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl")) shadowAnimator.Play("Crawl");
+            }
+            if (threat) threat.NoteMotion(moving, position);
+        }
+        void OnDestroy() { Cleanup(); }
+        void Cleanup()
+        {
+            if (cleaned) return;
+            cleaned = true;
+            CancelInvoke();
             if (game) game.FirstMechanismCompleted -= PassageChanged;
-            foreach (var m in new[] { metal,darkLamp,activeLamp,insects,larva,bodyMaterial }) if (m) Destroy(m);
+            for (int i = spawned.Count - 1; i >= 0; i--) if (spawned[i]) DestroyImmediate(spawned[i]);
+            spawned.Clear();
+            growths.Clear();
+            stations.Clear();
+            for (int i = 0; i < signs.Count; i++)
+                if (signs[i] && i < signLabels.Count) signs[i].text = signLabels[i];
+            signs.Clear();
+            signLabels.Clear();
+            if (candleLoop) DestroyImmediate(candleLoop);
+            if (fright) DestroyImmediate(fright);
+            foreach (var m in new[] { metal, darkLamp, activeLamp, insects, larva, bodyMaterial }) if (m) Destroy(m);
             if (ownsStain && stain) Destroy(stain);
             foreach (var m in eldritchMaterials) if (m) Destroy(m);
             foreach (var m in shadowMaterials) if (m) Destroy(m);
+        }
+        void Track(GameObject body)
+        {
+            if (body && !spawned.Contains(body)) spawned.Add(body);
         }
 
         static Material MakeMaterial(string label, Color color)
@@ -413,19 +551,14 @@ namespace Gamejam2026
 
         void AddExistingClutter(List<int> slots)
         {
-            GameObject barrel = null, pallet = null;
-            foreach (var candidate in FindObjectsByType<Transform>(FindObjectsInactive.Exclude))
-            {
-                if (!barrel && candidate.name == "Barrel") barrel = candidate.gameObject;
-                if (!pallet && candidate.name == "Pallet") pallet = candidate.gameObject;
-                if (barrel && pallet) break;
-            }
+            GameObject barrel = PickNamed("Barrel"), pallet = PickNamed("Pallet");
             if (!barrel && !pallet) return;
             for (int i = 0; i < 4; i++)
             {
                 var source = i % 2 == 0 ? barrel : pallet;
                 if (!source) source = barrel ? barrel : pallet;
                 var prop = Instantiate(source, transform);
+                Track(prop);
                 prop.name = i % 2 == 0 ? "Barril recuperado" : "Palé abandonado";
                 prop.transform.SetPositionAndRotation(Sites[slots[i + 2]] + new Vector3(i % 2 == 0 ? 1.6f : -1.6f, 0f, 1.1f), Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
                 foreach (var collider in prop.GetComponentsInChildren<Collider>()) Destroy(collider);
@@ -453,6 +586,7 @@ namespace Gamejam2026
             foreach (int index in selected)
             {
                 var body = Instantiate(source);
+                Track(body);
                 body.name = "Cuerpo cubierto - hallazgo " + index;
                 if (index == 0) depotBody = body;
                 coveredBodies[index == 0 ? 0 : 1] = body;
@@ -500,6 +634,7 @@ namespace Gamejam2026
             eldritchMaterials.Add(teeth);
             eldritchMaterials.Add(eyes);
             eldritch = Instantiate(source);
+            Track(eldritch);
             eldritch.name = "Anomalía persistente - ente del recinto";
             eldritch.transform.SetParent(transform, true);
             int site = Random.Range(0, EldritchSites.Length);
@@ -540,7 +675,12 @@ namespace Gamejam2026
         {
             string[] names = { "Cartel ENTRADA", "Cartel CARGA / DEPOSITO", "Cartel PATIO INTERIOR", "Cartel TALLER", "Cartel BOMBAS", "Cartel MANIVELA" };
             string[] labels = { "ACCESO 01", "ALMACÉN 02", "PATIO 03", "TALLER 04", "BOMBAS 05", "ÚTILES" };
+            var found = new List<TextMesh>();
             foreach (var text in FindObjectsByType<TextMesh>(FindObjectsInactive.Exclude))
+                for (int i = 0; i < names.Length; i++)
+                    if (text.name == names[i]) { found.Add(text); break; }
+            found.Sort((a, b) => string.Compare(a.name, b.name, System.StringComparison.Ordinal));
+            foreach (var text in found)
                 for (int i = 0; i < names.Length; i++)
                     if (text.name == names[i])
                     {
@@ -549,6 +689,17 @@ namespace Gamejam2026
                         signLabels.Add(labels[i]);
                         break;
                     }
+        }
+        static GameObject PickNamed(string objectName)
+        {
+            Transform best = null;
+            foreach (var candidate in FindObjectsByType<Transform>(FindObjectsInactive.Exclude))
+            {
+                if (candidate.name != objectName) continue;
+                if (!best || candidate.position.x < best.position.x || (candidate.position.x == best.position.x && candidate.position.z < best.position.z))
+                    best = candidate;
+            }
+            return best ? best.gameObject : null;
         }
 
         void UpdateCoveredBody()

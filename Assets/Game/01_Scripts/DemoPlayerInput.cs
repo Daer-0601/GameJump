@@ -29,8 +29,8 @@ namespace Gamejam2026
             }
         }
 
-        public static string UseLabel(int playerIndex) => playerIndex == 0 ? "E" : "U";
-        public static string DropLabel(int playerIndex) => playerIndex == 0 ? "Q" : "O";
+        public static string UseLabel(int playerIndex) => LanAuthority.LanMatch ? "E" : playerIndex == 0 ? "E" : "U";
+        public static string DropLabel(int playerIndex) => LanAuthority.LanMatch ? "Q" : playerIndex == 0 ? "Q" : "O";
 
         public static State Read(int playerIndex, float keyboardLookSpeed, float mouseSensitivity, float deltaTime,
             float preciseLookMultiplier = 0.35f)
