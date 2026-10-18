@@ -22,6 +22,9 @@ namespace Gamejam2026
         float shock;
         float[] atmosphereBase;
         float lightDim = 1f;
+        int pulseIndex = -1;
+        float pulseUntil;
+        float pulseSeconds = 1.8f;
         float nextMono;
         float monoHold;
         bool monoArmed;
@@ -71,6 +74,38 @@ namespace Gamejam2026
         }
 
         public void WrongOrder() { shock = 1f; }
+
+        public bool HasLightNear(Vector3 point, float radius)
+        {
+            return NearestAtmosphere(point, radius) >= 0;
+        }
+
+        public void PulseNear(Vector3 point)
+        {
+            if (!game || !game.Playing) return;
+            int index = NearestAtmosphere(point, 9f);
+            if (index < 0) return;
+            pulseIndex = index;
+            pulseSeconds = 1.8f;
+            pulseUntil = Time.time + pulseSeconds;
+        }
+
+        int NearestAtmosphere(Vector3 point, float radius)
+        {
+            if (game == null || game.atmosphereLights == null) return -1;
+            int best = -1;
+            float bestDistance = radius;
+            for (int i = 0; i < game.atmosphereLights.Length; i++)
+            {
+                var light = game.atmosphereLights[i];
+                if (!light || IsVictoryLight(light)) continue;
+                float distance = Vector3.Distance(light.transform.position, point);
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = i;
+            }
+            return best;
+        }
 
         public void Finish(bool won)
         {
@@ -150,7 +185,13 @@ namespace Gamejam2026
             {
                 var light = lights[i];
                 if (!light || IsVictoryLight(light)) continue;
-                light.intensity = atmosphereBase[i] * lightDim;
+                float dip = 1f;
+                if (game.Playing && i == pulseIndex && Time.time < pulseUntil)
+                {
+                    float u = Mathf.Clamp01((pulseUntil - Time.time) / Mathf.Max(0.2f, pulseSeconds));
+                    dip = Mathf.Lerp(1f, 0.28f, Mathf.Sin(u * Mathf.PI));
+                }
+                light.intensity = atmosphereBase[i] * lightDim * dip;
             }
         }
 

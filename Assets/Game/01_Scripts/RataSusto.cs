@@ -2,18 +2,21 @@ using UnityEngine;
 
 namespace Gamejam2026
 {
-    // La rata corre por su zona cuando alguien se acerca y desaparece
-    // cuando los dos jugadores se alejan lo suficiente.
+    // La rata corre por su zona cuando alguien se acerca durante la expedición
+    // y desaparece cuando los dos jugadores se alejan, o si la partida no está en juego.
     public class RataSusto : MonoBehaviour
     {
         public float distanciaAparece = 7.5f;
         public float distanciaDesaparece = 12f;
         public float velocidad = 1.7f;
         public float velocidadHuye = 3.1f;
+        public AudioClip chirrido;
 
         Transform cuerpo;
         Transform[] puntos;
         DemoPlayer[] jugadores;
+        DemoGame partida;
+        AudioSource voz;
         int indice;
         float espera;
         bool activa;
@@ -22,15 +25,28 @@ namespace Gamejam2026
         {
             cuerpo = transform.Find("Cuerpo");
             var camino = transform.Find("Camino");
-            puntos = new Transform[camino.childCount];
+            puntos = camino ? new Transform[camino.childCount] : System.Array.Empty<Transform>();
             for (int i = 0; i < puntos.Length; i++) puntos[i] = camino.GetChild(i);
             if (cuerpo && puntos.Length > 0) cuerpo.position = puntos[0].position;
+            voz = gameObject.AddComponent<AudioSource>();
+            voz.playOnAwake = false;
+            voz.spatialBlend = 0f;
             Visible(false);
         }
 
         void Update()
         {
             if (!cuerpo || puntos == null || puntos.Length < 2) return;
+            if (!partida) partida = FindAnyObjectByType<DemoGame>();
+            if (!partida || !partida.Playing)
+            {
+                if (activa)
+                {
+                    Visible(false);
+                    activa = false;
+                }
+                return;
+            }
             float cerca = DistanciaMasCercana(transform.position);
             if (!activa)
             {
@@ -69,6 +85,11 @@ namespace Gamejam2026
             espera = 0.15f;
             Visible(true);
             activa = true;
+            if (chirrido && voz && partida)
+            {
+                Orientar(cuerpo.position);
+                voz.PlayOneShot(chirrido, partida.sfxVolume * 0.2f);
+            }
         }
 
         void Correr()
@@ -114,8 +135,27 @@ namespace Gamejam2026
             return distancia;
         }
 
+        void Orientar(Vector3 punto)
+        {
+            DemoPlayer oido = null;
+            float cerca = float.MaxValue;
+            if (partida.players != null)
+            {
+                foreach (var jugador in partida.players)
+                {
+                    if (!jugador || !jugador.view) continue;
+                    float distancia = Vector3.Distance(jugador.view.transform.position, punto);
+                    if (distancia < cerca) { cerca = distancia; oido = jugador; }
+                }
+            }
+            if (!oido) return;
+            Vector3 delta = punto - oido.view.transform.position;
+            voz.panStereo = Mathf.Clamp(Vector3.Dot(oido.view.transform.right, delta.sqrMagnitude > 0.01f ? delta.normalized : Vector3.forward), -0.55f, 0.55f);
+        }
+
         void Visible(bool valor)
         {
+            if (!cuerpo) return;
             foreach (var renderer in cuerpo.GetComponentsInChildren<Renderer>()) renderer.enabled = valor;
         }
     }

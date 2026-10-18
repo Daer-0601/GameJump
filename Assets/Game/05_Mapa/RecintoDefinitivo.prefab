@@ -8328,6 +8328,7 @@ MonoBehaviour:
   distanciaDesaparece: 12
   velocidad: 1.7
   velocidadHuye: 3.1
+  chirrido: {fileID: 8300000, guid: 387fa93ab96afec4ea6393860dfa9a3b, type: 3}
 --- !u!1 &5670753745733043935
 GameObject:
   m_ObjectHideFlags: 0
@@ -10966,6 +10967,7 @@ MonoBehaviour:
   distanciaDesaparece: 12
   velocidad: 1.7
   velocidadHuye: 3.1
+  chirrido: {fileID: 8300000, guid: 387fa93ab96afec4ea6393860dfa9a3b, type: 3}
 --- !u!1 &7924615809574193287
 GameObject:
   m_ObjectHideFlags: 0
