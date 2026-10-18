@@ -30,9 +30,14 @@ namespace Gamejam2026
         RecintoShadowPath path;
         readonly Queue<Vector3> route = new Queue<Vector3>();
         RecintoStation shadowTarget;
-        float abandonedTime, nextAbandonedStep, travelBudget, moveAfter, contactAfter;
+        float abandonedTime, nextAbandonedStep, travelBudget, moveAfter, contactAfter, nextAppearance;
         Vector3 retreatPoint;
         bool retreating, navigating;
+        readonly List<Material> shadowMaterials = new List<Material>();
+        [Range(20f, 90f)] public float firstAppearanceSeconds = 36f;
+        [Range(22f, 90f)] public float calmAppearanceSeconds = 50f;
+        [Range(16f, 60f)] public float dangerAppearanceSeconds = 28f;
+        [Range(6f, 14f)] public float seenDistance = 8f;
         int alteredSign = -1, pendingSign = -1;
         float restoreSignAt;
         string falseMark;
@@ -143,9 +148,20 @@ namespace Gamejam2026
             var crawlClip = threat && threat.Movement ? threat.Movement : Resources.Load<AudioClip>("Production/Crawl");
             crawl.clips = new[] { crawlClip };
             crawl.loop = true; crawl.onlyWhileShadowMoves = true; crawl.volume = .07f; crawl.radius = 16;
+            foreach (var renderer in shadow.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer is SkinnedMeshRenderer skin) skin.updateWhenOffscreen = true;
+                if (!renderer.sharedMaterial) continue;
+                var skinMaterial = new Material(renderer.sharedMaterial);
+                skinMaterial.EnableKeyword("_EMISSION");
+                skinMaterial.SetColor("_EmissionColor", new Color(.04f, .05f, .035f));
+                renderer.sharedMaterial = skinMaterial;
+                shadowMaterials.Add(skinMaterial);
+            }
             path = new RecintoShadowPath();
             path.Build(); shadow.transform.position = path.Nearest(shadow.transform.position);
             retreatPoint = shadow.transform.position;
+            nextAppearance = Mathf.Max(12f, firstAppearanceSeconds);
         }
         void Update()
         {
@@ -246,7 +262,7 @@ namespace Gamejam2026
             abandonedTime = candleClose ? 0 : abandonedTime + Time.deltaTime;
             if (abandonedTime >= 7 && game.ElapsedSeconds >= nextAbandonedStep)
             { nextAbandonedStep = game.ElapsedSeconds + 9; AdvanceShadow("La luz está lejos de ambos."); }
-            bool watched = game.players.Any(p => p && (Visible(p.view,shadow.transform.position + Vector3.up * .25f) || Visible(p.view,shadow.transform.position + Vector3.right * .5f + Vector3.up * .3f)));
+            bool watched = ShadowWatched();
             navigating = (retreating || travelBudget > 0) && game.ElapsedSeconds >= moveAfter && (!watched || retreating);
             if (shadowAnimator)
             {
@@ -287,19 +303,51 @@ namespace Gamejam2026
                     Sound(game.gearsClip,shadow.transform.position,.14f); shadowTarget = null; travelBudget = 0; route.Clear();
                 }
             }
-            if (retreating || game.ElapsedSeconds < contactAfter || game.ElapsedSeconds < moveAfter || travelBudget <= 0) return;
-            foreach (var p in game.players)
+            bool canTouch = !retreating && game.ElapsedSeconds >= contactAfter && game.ElapsedSeconds >= moveAfter && travelBudget > 0f;
+            if (canTouch)
             {
-                if (!p || Vector3.Distance(p.transform.position,shadow.transform.position) > 1.6f || HasCandleLight(p.transform.position + Vector3.up) || watched) continue;
-                contactAfter = game.ElapsedSeconds + 15;
-                bool alreadyTouched = game.ShadowContacts > 0;
-                game.ShadowContact();
-                if (!alreadyTouched && !game.Finished && threat) threat.Contact(shadow.transform.position);
-                retreating = !game.Finished; travelBudget = 0; route.Clear();
-                Vector3 away = shadow.transform.position - p.transform.position; away.y = 0;
-                retreatPoint = path.Nearest(shadow.transform.position + away.normalized * 9); moveAfter = game.ElapsedSeconds;
-                break;
+                foreach (var p in game.players)
+                {
+                    if (!p || Vector3.Distance(p.transform.position,shadow.transform.position) > 1.6f || HasCandleLight(p.transform.position + Vector3.up) || watched) continue;
+                    contactAfter = game.ElapsedSeconds + 15;
+                    bool alreadyTouched = game.ShadowContacts > 0;
+                    game.ShadowContact();
+                    if (!alreadyTouched && !game.Finished && threat) threat.Contact(shadow.transform.position);
+                    retreating = !game.Finished; travelBudget = 0; route.Clear();
+                    Vector3 away = shadow.transform.position - p.transform.position; away.y = 0;
+                    retreatPoint = path.Nearest(shadow.transform.position + away.normalized * 9); moveAfter = game.ElapsedSeconds;
+                    break;
+                }
             }
+            ConsiderAppearance();
+        }
+        float AppearanceGap()
+        {
+            float danger = game ? Mathf.Clamp01(game.Danger / 100f) : 0f;
+            return Mathf.Lerp(Mathf.Max(12f, calmAppearanceSeconds), Mathf.Max(12f, dangerAppearanceSeconds), danger);
+        }
+        void ConsiderAppearance()
+        {
+            bool traveling = retreating || travelBudget > 0f || game.ElapsedSeconds < moveAfter;
+            if (traveling) nextAppearance = Mathf.Max(nextAppearance, game.ElapsedSeconds + AppearanceGap());
+            if (traveling || game.ElapsedSeconds < contactAfter || game.ElapsedSeconds < nextAppearance) return;
+            AdvanceShadow("Se oye un gateo en la oscuridad.");
+        }
+        bool ShadowWatched()
+        {
+            Vector3 low = shadow.transform.position + Vector3.up * .25f;
+            Vector3 side = shadow.transform.position + Vector3.right * .5f + Vector3.up * .3f;
+            foreach (var player in game.players)
+            {
+                if (!player) continue;
+                if (Perceivable(player.view, low) || Perceivable(player.view, side)) return true;
+            }
+            return false;
+        }
+        bool Perceivable(Camera camera, Vector3 point)
+        {
+            if (!Visible(camera, point)) return false;
+            return Vector3.Distance(camera.transform.position, point) <= Mathf.Max(4f, seenDistance);
         }
         public void RecordEvidence(int index)
         {
@@ -351,6 +399,7 @@ namespace Gamejam2026
             foreach (var m in new[] { metal,darkLamp,activeLamp,insects,larva,bodyMaterial }) if (m) Destroy(m);
             if (ownsStain && stain) Destroy(stain);
             foreach (var m in eldritchMaterials) if (m) Destroy(m);
+            foreach (var m in shadowMaterials) if (m) Destroy(m);
         }
 
         static Material MakeMaterial(string label, Color color)
