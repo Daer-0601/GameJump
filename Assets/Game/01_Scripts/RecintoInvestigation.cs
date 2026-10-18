@@ -114,7 +114,17 @@ namespace Gamejam2026
             Contaminate(stations[0]); Contaminate(stations[3]);
             CreateDecay(Sites[slots[1]] + Vector3.right * 1.2f, 6, null, 0);
             CreateDecay(Sites[slots[4]] + Vector3.left * 1.2f, 5, null, 0);
-            CreateCoveredBodies(); CreateEldritchAnomaly(); PrepareSigns(); CreateShadow(); CreateSeals();
+            CreateCoveredBodies(); CreateEldritchAnomaly(); PrepareSigns();
+            try { CreateShadow(); }
+            catch (System.Exception error)
+            {
+                Debug.LogException(error);
+                if (shadow) Destroy(shadow);
+                shadow = null;
+                shadowAnimator = null;
+                path = null;
+            }
+            CreateSeals();
             game.FirstMechanismCompleted += PassageChanged;
             building = false;
         }
@@ -234,11 +244,64 @@ namespace Gamejam2026
             }
             return growth;
         }
+        static bool shadowFaultLogged;
+
         void CreateShadow()
         {
             shadow = null;
             shadowAnimator = null;
             path = null;
+            var source = Resources.Load<GameObject>("Production/Shadow");
+            if (!source)
+            {
+                if (!shadowFaultLogged)
+                {
+                    shadowFaultLogged = true;
+                    Debug.LogError("RecintoInvestigation: falta Resources/Production/Shadow. La amenaza no se crea; el recinto y la partida siguen.");
+                }
+                return;
+            }
+            path = new RecintoShadowPath();
+            path.Build();
+            var avoid = new Vector3[game.players != null ? game.players.Length : 0];
+            if (game.players != null)
+                for (int i = 0; i < game.players.Length; i++)
+                    if (game.players[i]) avoid[i] = game.players[i].transform.position;
+            if (!path.TryStand(new Vector3(-13f, 0f, 27f), avoid, 8f, out Vector3 stand))
+            {
+                if (!shadowFaultLogged)
+                {
+                    shadowFaultLogged = true;
+                    Debug.LogError("RecintoInvestigation: la cuadrícula del recinto no tiene una celda abierta a más de 8 m de los jugadores. La sombra no se crea; el recinto y la partida siguen.");
+                }
+                path = null;
+                return;
+            }
+            shadow = Instantiate(source, transform);
+            Track(shadow);
+            shadow.name = "Sombra - amenaza avisada";
+            shadow.transform.position = stand;
+            shadowAnimator = shadow.GetComponentInChildren<Animator>();
+            var crawl = shadow.AddComponent<RecintoSound>();
+            crawl.game = game;
+            var crawlClip = threat && threat.Movement ? threat.Movement : Resources.Load<AudioClip>("Production/Crawl");
+            crawl.clips = new[] { crawlClip };
+            crawl.loop = true;
+            crawl.onlyWhileShadowMoves = true;
+            crawl.volume = .07f;
+            crawl.radius = 16;
+            foreach (var renderer in shadow.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer is SkinnedMeshRenderer skin) skin.updateWhenOffscreen = true;
+                if (!renderer.sharedMaterial) continue;
+                var skinMaterial = new Material(renderer.sharedMaterial);
+                skinMaterial.EnableKeyword("_EMISSION");
+                skinMaterial.SetColor("_EmissionColor", new Color(.04f, .05f, .035f));
+                renderer.sharedMaterial = skinMaterial;
+                shadowMaterials.Add(skinMaterial);
+            }
+            retreatPoint = stand;
+            nextAppearance = Mathf.Max(12f, firstAppearanceSeconds);
         }
         void Update()
         {
@@ -331,9 +394,83 @@ namespace Gamejam2026
             foreach (var p in game.players) if (p && (Vector3.Distance(p.transform.position,point) < distance || IsInView(p.view,point))) return false;
             return true;
         }
-        public void AdvanceShadow(string reason) { }
+        public void AdvanceShadow(string reason)
+        {
+            if (!game || !game.Playing || !shadow || !LanAuthority.Simulates) return;
+            game.WarnThreat("Algo cruza fuera de la vela. " + reason);
+            if (threat) threat.Warn(shadow.transform.position);
+            if (travelBudget <= 0) { moveAfter = game.ElapsedSeconds + 3; route.Clear(); shadowTarget = null; }
+            travelBudget = Mathf.Min(18, travelBudget + 7);
+        }
         void UpdateShadow()
         {
+            if (!shadow || path == null) return;
+            bool candleClose = false;
+            foreach (var p in game.players) if (p && HasCandleLight(p.transform.position + Vector3.up)) candleClose = true;
+            abandonedTime = candleClose ? 0 : abandonedTime + Time.deltaTime;
+            if (abandonedTime >= 7 && game.ElapsedSeconds >= nextAbandonedStep)
+            { nextAbandonedStep = game.ElapsedSeconds + 9; AdvanceShadow("La luz está lejos de ambos."); }
+            bool watched = ShadowWatched();
+            navigating = (retreating || travelBudget > 0) && game.ElapsedSeconds >= moveAfter && (!watched || retreating);
+            if (shadowAnimator)
+            {
+                shadowAnimator.speed = navigating ? 1 : 0;
+                if (navigating && !shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl")) shadowAnimator.Play("Crawl");
+            }
+            if (threat) threat.NoteMotion(navigating, shadow.transform.position);
+            if (navigating)
+            {
+                if (route.Count == 0)
+                {
+                    Vector3 target;
+                    if (retreating) target = retreatPoint;
+                    else
+                    {
+                        var nearest = game.players.Where(p => p).OrderBy(p => Vector3.Distance(p.transform.position, shadow.transform.position)).FirstOrDefault();
+                        var candle = game.candles != null ? game.candles.FirstOrDefault(c => c && c.isActiveAndEnabled && c.candleLight && c.candleLight.enabled) : null;
+                        Vector3 lure = candle ? candle.candleLight.transform.position : nearest ? nearest.transform.position : shadow.transform.position;
+                        shadowTarget = stations.Where(s => s && !s.Contaminated).OrderBy(s => Vector3.Distance(s.transform.position, lure)).FirstOrDefault();
+                        target = Vector3.Distance(lure, shadow.transform.position) < 9 || !shadowTarget ? lure : shadowTarget.transform.position;
+                    }
+                    path.Route(shadow.transform.position, target, route);
+                }
+                if (route.Count > 0)
+                {
+                    Vector3 delta = route.Peek() - shadow.transform.position; delta.y = 0;
+                    float step = Mathf.Min(delta.magnitude, Time.deltaTime * 1.1f);
+                    if (delta.sqrMagnitude > .002f) shadow.transform.rotation = Quaternion.Slerp(shadow.transform.rotation, Quaternion.LookRotation(delta), Time.deltaTime * 5);
+                    shadow.transform.position += delta.normalized * step;
+                    if (!retreating) travelBudget = Mathf.Max(0, travelBudget - step);
+                    if (delta.magnitude < .15f) route.Dequeue();
+                    if (retreating && route.Count == 0) retreating = false;
+                }
+                else { travelBudget = 0; retreating = false; }
+                if (shadowTarget && !retreating && !shadowTarget.Contaminated && Vector3.Distance(shadow.transform.position, shadowTarget.transform.position) < 2)
+                {
+                    shadowTarget.Corrupt(); game.Notify("Metal y roce húmedo: la sombra ha corrompido " + shadowTarget.name + ". Quemen el brote.", 7);
+                    Sound(game.gearsClip, shadow.transform.position, .14f); shadowTarget = null; travelBudget = 0; route.Clear();
+                }
+            }
+            bool canTouch = !retreating && game.ElapsedSeconds >= contactAfter && game.ElapsedSeconds >= moveAfter && travelBudget > 0f;
+            if (canTouch)
+            {
+                foreach (var p in game.players)
+                {
+                    if (!p || Vector3.Distance(p.transform.position, shadow.transform.position) > 1.6f || HasCandleLight(p.transform.position + Vector3.up) || watched) continue;
+                    contactAfter = game.ElapsedSeconds + 15;
+                    bool alreadyTouched = game.ShadowContacts > 0;
+                    game.ShadowContact();
+                    if (!alreadyTouched && !game.Finished && threat) threat.Contact(shadow.transform.position);
+                    retreating = !game.Finished; travelBudget = 0; route.Clear();
+                    Vector3 away = shadow.transform.position - p.transform.position; away.y = 0;
+                    if (away.sqrMagnitude < 0.01f) away = Vector3.back;
+                    if (path.TryStand(shadow.transform.position + away.normalized * 9f, null, 0f, out Vector3 retreat))
+                        retreatPoint = retreat;
+                    moveAfter = game.ElapsedSeconds;
+                    break;
+                }
+            }
+            ConsiderAppearance();
         }
         float AppearanceGap()
         {
@@ -481,7 +618,6 @@ namespace Gamejam2026
                 shadowAnimator.speed = moving ? 1f : 0f;
                 if (moving && !shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl")) shadowAnimator.Play("Crawl");
             }
-            if (threat) threat.NoteMotion(moving, position);
         }
         void OnDestroy() { Cleanup(); }
         void Cleanup()

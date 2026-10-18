@@ -258,6 +258,7 @@ namespace Gamejam2026
                 return;
             }
             if (!game.Playing) return;
+            if (LanAuthority.LanMatch && player.playerIndex != LanAuthority.LocalSlot) return;
             float dt = Time.unscaledDeltaTime;
             bool toggle = game.PlayerInputEnabled && DemoPlayerInput.NotebookPressed(player.playerIndex);
             switch (state)

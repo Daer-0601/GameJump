@@ -160,6 +160,12 @@ namespace Gamejam2026
             Instance.WorldRpc(id, point, volume);
         }
 
+        public static void BroadcastThreat(byte kind, Vector3 point, float amount)
+        {
+            if (kind > 2 || Instance == null || !Instance.IsServer) return;
+            Instance.ThreatRpc(kind, point, amount);
+        }
+
         void BeginPrepare()
         {
             launching = true;
@@ -309,6 +315,14 @@ namespace Gamejam2026
         {
             if (!LanFlow.Game || !LanFlow.Game.Investigation) return;
             LanFlow.Game.Investigation.PlayRelayed(id, point, volume);
+        }
+
+        [Rpc(SendTo.NotServer, InvokePermission = RpcInvokePermission.Server)]
+        void ThreatRpc(byte kind, Vector3 point, float amount)
+        {
+            if (!LanFlow.Game) return;
+            var threat = LanFlow.Game.GetComponent<RecintoThreatPresentation>();
+            if (threat) threat.Present(kind, point, amount);
         }
 
         static string CrewName(DemoGame game, bool hostSide)

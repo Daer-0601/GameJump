@@ -65,7 +65,7 @@ namespace Gamejam2026
 
         public void Warn(Vector3 point)
         {
-            Play(warning, point, 0.42f);
+            PlayEvent(0, warning, point, 0.42f);
         }
 
         public void NoteMotion(bool moving, Vector3 point)
@@ -73,13 +73,27 @@ namespace Gamejam2026
             if (moving == wasMoving) return;
             wasMoving = moving;
             if (moving || !game || !game.Playing) return;
-            Play(stop, point, 0.34f);
-            game.WarnThreat("La sombra se detuvo. Sigue en el recinto; no deis por hecho que se ha ido.");
+            PlayEvent(1, stop, point, 0.34f);
+            if (LanAuthority.Simulates)
+                game.WarnThreat("La sombra se detuvo. Sigue en el recinto; no deis por hecho que se ha ido.");
         }
 
         public void Contact(Vector3 point)
         {
-            Play(contact, point, 0.5f);
+            PlayEvent(2, contact, point, 0.5f);
+        }
+
+        public void Present(byte kind, Vector3 point, float amount)
+        {
+            AudioClip clip = kind == 0 ? warning : kind == 1 ? stop : kind == 2 ? contact : null;
+            LanEcho.Apply(() => Play(clip, point, amount));
+        }
+
+        void PlayEvent(byte kind, AudioClip clip, Vector3 point, float amount)
+        {
+            if (!LanEcho.Applying && LanAuthority.IsHost)
+                LanSession.BroadcastThreat(kind, point, amount);
+            Play(clip, point, amount);
         }
 
         void TryKnock()

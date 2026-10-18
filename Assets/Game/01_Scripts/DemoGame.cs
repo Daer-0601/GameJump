@@ -12,6 +12,29 @@ namespace Gamejam2026
     public class DemoGame : MonoBehaviour
     {
         const int MaxName = 18;
+        const int OptGeneral = 0;
+        const int OptAmbience = 1;
+        const int OptEffects = 2;
+        const int OptCamera = 3;
+        const int OptFull = 4;
+        const int OptResolution = 5;
+        const int OptBack = 6;
+        const int OptionCount = 7;
+        const int MenuBegin = 2;
+        const int MenuHost = 3;
+        const int MenuJoin = 4;
+        const int MenuOptions = 5;
+        const int MenuQuit = 6;
+        const int MenuCount = 7;
+        const int PauseContinue = 0;
+        const int PauseOptions = 1;
+        const int PauseMenu = 2;
+        const int PauseQuit = 3;
+        const int PauseCount = 4;
+        const int ResultRetry = 0;
+        const int ResultMenu = 1;
+        const int ResultQuit = 2;
+        const int ResultCount = 3;
         const string NameKey1 = "AOscuras.Name1";
         const string NameKey2 = "AOscuras.Name2";
         const string MasterKey = "AOscuras.VolMaster";
@@ -321,6 +344,7 @@ namespace Gamejam2026
         int resolutionIndex;
         float axisTimerX;
         float axisTimerY;
+        bool horizontalFresh;
         float backspaceTimer;
         MenuCommand command;
         Keyboard textKeyboard;
@@ -412,7 +436,8 @@ namespace Gamejam2026
             if (!atmosphere) atmosphere = gameObject.AddComponent<DemoAtmosphere>();
             atmosphere.Initialize(this);
             Investigation = gameObject.AddComponent<RecintoInvestigation>();
-            Investigation.Initialize(this);
+            try { Investigation.Initialize(this); }
+            catch (Exception error) { Debug.LogException(error); }
             PrepareNotebooks();
             ResetLearningTips();
             Cursor.lockState = CursorLockMode.None;
@@ -447,6 +472,7 @@ namespace Gamejam2026
             introducing = false;
             started = true;
             inputResumeFrame = Time.frameCount;
+            ApplyPerspective(true);
             CuadernoContenido.Anotar(this, "Turno de noche. " + PlayerLabel(0) + " lleva la vela y " + PlayerLabel(1) + " la manivela. Lo que pase queda apuntado aquí.");
             LockPointer();
         }
@@ -799,6 +825,7 @@ namespace Gamejam2026
             }
             paused = false;
             inputResumeFrame = Time.frameCount;
+            ApplyPerspective(true);
             HoldClock();
             LockPointer();
         }
@@ -1025,7 +1052,7 @@ namespace Gamejam2026
         {
             if (wantFirst == firstPerson) return;
             firstPerson = wantFirst;
-            ApplyPerspective(false);
+            ApplyPerspective(true);
             SaveAudio();
         }
 
@@ -1058,7 +1085,7 @@ namespace Gamejam2026
         {
             optionsOpen = false;
             SaveAudio();
-            focusIndex = overlay == 1 ? 1 : 5;
+            focusIndex = overlay == 1 ? PauseOptions : MenuOptions;
             hover = -1;
         }
 
@@ -1110,10 +1137,10 @@ namespace Gamejam2026
                 RebuildLanItems();
                 return netCount;
             }
-            if (optionsOpen && (id == 0 || id == 1)) return 7;
-            if (id == 0) return 7;
-            if (id == 1) return 4;
-            if (id == 2) return 3;
+            if (optionsOpen && (id == 0 || id == 1)) return OptionCount;
+            if (id == 0) return MenuCount;
+            if (id == 1) return PauseCount;
+            if (id == 2) return ResultCount;
             return 0;
         }
 
@@ -1135,7 +1162,7 @@ namespace Gamejam2026
             {
                 if (string.IsNullOrWhiteSpace(name1)) focusIndex = 0;
                 else if (string.IsNullOrWhiteSpace(name2)) focusIndex = 1;
-                else focusIndex = 2;
+                else focusIndex = MenuBegin;
             }
             else focusIndex = 0;
         }
@@ -1187,25 +1214,31 @@ namespace Gamejam2026
                 {
                     LanFlow.Cancel();
                     lanMenu = NetMenu.None;
-                    focusIndex = 2;
+                    focusIndex = MenuBegin;
                     return;
                 }
                 if (overlay == 1 && escape)
                 {
                     if (LanFlow.PeerLost)
                     {
-                        focusIndex = 2;
+                        focusIndex = PauseMenu;
                         Queue(MenuCommand.MainMenu);
                         return;
                     }
-                    focusIndex = 0;
+                    focusIndex = PauseContinue;
                     Queue(MenuCommand.Continue);
                 }
                 return;
             }
 
-            if (SouthDown() && !editing && !NameSlot(focusIndex))
+            if (SouthDown() && !editing)
             {
+                if (NameSlot(focusIndex) || IpSlot(focusIndex))
+                {
+                    keyboardEdit = true;
+                    caret = IpSlot(focusIndex) ? lanIp.Length : NameOf(focusIndex).Length;
+                    return;
+                }
                 ActivateFocused();
                 return;
             }
@@ -1270,19 +1303,28 @@ namespace Gamejam2026
 
         void NudgeOption(int direction)
         {
-            if (focusIndex >= 0 && focusIndex <= 2) SetOption(focusIndex, OptionValue(focusIndex) + direction * 0.05f);
-            else if (focusIndex == 3) SetPerspective(direction > 0);
-            else if (focusIndex == 5) ShiftResolution(direction);
+            if (direction == 0) return;
+            if (focusIndex >= OptGeneral && focusIndex <= OptEffects)
+                SetOption(focusIndex, OptionValue(focusIndex) + direction * 0.05f);
+            else if (focusIndex == OptCamera)
+            {
+                if (horizontalFresh) SetPerspective(!firstPerson);
+            }
+            else if (focusIndex == OptFull)
+            {
+                if (horizontalFresh) ToggleFullscreen();
+            }
+            else if (focusIndex == OptResolution) ShiftResolution(direction);
         }
 
         void ActivateFocused()
         {
             if (optionsOpen)
             {
-                if (focusIndex == 3) SetPerspective(!firstPerson);
-                else if (focusIndex == 4) ToggleFullscreen();
-                else if (focusIndex == 5) ShiftResolution(1);
-                else if (focusIndex == 6) CloseOptions();
+                if (focusIndex == OptCamera) SetPerspective(!firstPerson);
+                else if (focusIndex == OptFull) ToggleFullscreen();
+                else if (focusIndex == OptResolution) ShiftResolution(1);
+                else if (focusIndex == OptBack) CloseOptions();
                 return;
             }
             if (overlay == 0)
@@ -1292,24 +1334,24 @@ namespace Gamejam2026
                     ActivateLan();
                     return;
                 }
-                if (focusIndex == 2) Queue(MenuCommand.Begin);
-                else if (focusIndex == 3) OpenHost();
-                else if (focusIndex == 4) OpenJoin();
-                else if (focusIndex == 5) OpenOptions();
-                else if (focusIndex == 6) Queue(MenuCommand.Quit);
+                if (focusIndex == MenuBegin) Queue(MenuCommand.Begin);
+                else if (focusIndex == MenuHost) OpenHost();
+                else if (focusIndex == MenuJoin) OpenJoin();
+                else if (focusIndex == MenuOptions) OpenOptions();
+                else if (focusIndex == MenuQuit) Queue(MenuCommand.Quit);
             }
             else if (overlay == 1)
             {
-                if (focusIndex == 0 && !LanFlow.PeerLost) Queue(MenuCommand.Continue);
-                else if (focusIndex == 1) OpenOptions();
-                else if (focusIndex == 2) Queue(MenuCommand.MainMenu);
-                else Queue(MenuCommand.Quit);
+                if (focusIndex == PauseContinue && !LanFlow.PeerLost) Queue(MenuCommand.Continue);
+                else if (focusIndex == PauseOptions) OpenOptions();
+                else if (focusIndex == PauseMenu) Queue(MenuCommand.MainMenu);
+                else if (focusIndex == PauseQuit) Queue(MenuCommand.Quit);
             }
             else if (overlay == 2)
             {
-                if (focusIndex == 0) Queue(MenuCommand.Retry);
-                else if (focusIndex == 1) Queue(MenuCommand.MainMenu);
-                else Queue(MenuCommand.Quit);
+                if (focusIndex == ResultRetry) Queue(MenuCommand.Retry);
+                else if (focusIndex == ResultMenu) Queue(MenuCommand.MainMenu);
+                else if (focusIndex == ResultQuit) Queue(MenuCommand.Quit);
             }
         }
 
@@ -1323,7 +1365,7 @@ namespace Gamejam2026
 
         bool NameSlot(int index)
         {
-            return lanMenu == NetMenu.None && !optionsOpen && overlay == 0 && index >= 0 && index < 2;
+            return lanMenu == NetMenu.None && !optionsOpen && overlay == 0 && index >= 0 && index < MenuBegin;
         }
 
         bool IpSlot(int index)
@@ -1474,16 +1516,25 @@ namespace Gamejam2026
             }
             if (!held)
             {
-                if (horizontal) axisTimerX = 0f;
+                if (horizontal)
+                {
+                    axisTimerX = 0f;
+                    horizontalFresh = false;
+                }
                 else axisTimerY = 0f;
                 return 0;
             }
 
             float timer = horizontal ? axisTimerX : axisTimerY;
             if (Time.unscaledTime < timer) return 0;
-            float repeat = timer == 0f ? 0.36f : 0.14f;
+            bool fresh = timer == 0f;
+            float repeat = fresh ? 0.36f : 0.14f;
             timer = Time.unscaledTime + repeat;
-            if (horizontal) axisTimerX = timer;
+            if (horizontal)
+            {
+                axisTimerX = timer;
+                horizontalFresh = fresh;
+            }
             else axisTimerY = timer;
             return direction;
         }
@@ -1589,15 +1640,15 @@ namespace Gamejam2026
             y = titleRect.yMax + 16f;
             briefRect = new Rect(x, y, columnW, 64f);
             y = briefRect.yMax + 18f;
-            hitCount = 7;
-            for (int i = 0; i < 2; i++)
+            hitCount = MenuCount;
+            for (int i = 0; i < MenuBegin; i++)
             {
                 hits[i] = new Rect(x, y, columnW, 58f);
                 visuals[i] = new Rect(x + 16f, y + 20f, columnW - 16f, 38f);
                 y = hits[i].yMax + 8f;
             }
             y += 4f;
-            for (int i = 2; i <= 6; i++)
+            for (int i = MenuBegin; i <= MenuQuit; i++)
             {
                 hits[i] = visuals[i] = new Rect(x, y, columnW, 40f);
                 y += 44f;
@@ -1613,20 +1664,20 @@ namespace Gamejam2026
             float y = Mathf.Max(height * 0.08f, 48f);
             titleRect = new Rect(x, y, columnW, 64f);
             y = titleRect.yMax + 28f;
-            hitCount = 7;
-            for (int i = 0; i < 6; i++)
+            hitCount = OptionCount;
+            for (int i = 0; i < OptBack; i++)
             {
                 hits[i] = visuals[i] = new Rect(x, y, columnW, 42f);
                 y += 50f;
             }
-            hits[6] = visuals[6] = new Rect(x, y + 10f, columnW, 46f);
-            helpRect = new Rect(x, hits[6].yMax + 16f, columnW, 72f);
+            hits[OptBack] = visuals[OptBack] = new Rect(x, y + 10f, columnW, 46f);
+            helpRect = new Rect(x, hits[OptBack].yMax + 16f, columnW, 72f);
             statusRect = helpRect;
         }
 
         void LayoutSimple(float x, float columnW, float height)
         {
-            int count = overlay == 1 ? 4 : 3;
+            int count = overlay == 1 ? PauseCount : ResultCount;
             const float block = 520f;
             float y = Mathf.Max(height * 0.055f + 18f, (height - block) * 0.4f);
             titleRect = new Rect(x, y, columnW, 72f);
@@ -1652,7 +1703,7 @@ namespace Gamejam2026
             for (int i = 0; i < hitCount; i++)
                 if (hits[i].Contains(gui)) hover = i;
 
-            if (optionsOpen && hover >= 0 && hover <= 2 && mouse.leftButton.isPressed)
+            if (optionsOpen && hover >= OptGeneral && hover <= OptEffects && mouse.leftButton.isPressed)
                 SetOption(hover, SliderAmount(hits[hover], gui.x));
 
             if (!mouse.leftButton.wasPressedThisFrame || pointerFrame == Time.frameCount) return;
@@ -1664,7 +1715,7 @@ namespace Gamejam2026
             }
 
             focusIndex = hover;
-            if (optionsOpen && hover <= 2)
+            if (optionsOpen && hover >= OptGeneral && hover <= OptEffects)
             {
                 SetOption(hover, SliderAmount(hits[hover], gui.x));
                 return;
@@ -1766,11 +1817,11 @@ namespace Gamejam2026
 
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
-            DrawChoice(hits[2], "INICIAR EXPEDICIÓN", 2, false, false, false);
-            DrawChoice(hits[3], "CREAR PARTIDA LAN", 3, false, false, false);
-            DrawChoice(hits[4], "UNIRSE A PARTIDA", 4, false, false, false);
-            DrawChoice(hits[5], "OPCIONES", 5, false, false, false);
-            DrawChoice(hits[6], "SALIR", 6, false, false, false);
+            DrawChoice(hits[MenuBegin], "INICIAR EXPEDICIÓN", MenuBegin, false, false, false);
+            DrawChoice(hits[MenuHost], "CREAR PARTIDA LAN", MenuHost, false, false, false);
+            DrawChoice(hits[MenuJoin], "UNIRSE A PARTIDA", MenuJoin, false, false, false);
+            DrawChoice(hits[MenuOptions], "OPCIONES", MenuOptions, false, false, false);
+            DrawChoice(hits[MenuQuit], "SALIR", MenuQuit, false, false, false);
             Label(statusRect, "Local: dos personas, un teclado. LAN: un operario por PC, en la misma red.", smallStyle, Ash);
             Label(helpRect, HelpText(), smallStyle, Ash);
         }
@@ -1780,17 +1831,17 @@ namespace Gamejam2026
             DrawTracked(titleRect, "Opciones", glyphStyle, 6f, Paper);
             Rule(titleRect.x + 84f, titleRect.yMax + 6f, 140f);
             Box(new Rect(titleRect.x, titleRect.yMax + 6f, 28f, 1f), Accent);
-            DrawSlider(0, "GENERAL");
-            DrawSlider(1, "AMBIENTE");
-            DrawSlider(2, "EFECTOS");
-            DrawChoice(hits[3], "CÁMARA: " + (firstPerson ? "PRIMERA PERSONA" : "TERCERA PERSONA"), 3, false, false, false);
-            DrawChoice(hits[4], "PANTALLA COMPLETA    " + (fullscreen ? "SÍ" : "NO"), 4, false, false, false);
+            DrawSlider(OptGeneral, "GENERAL");
+            DrawSlider(OptAmbience, "AMBIENTE");
+            DrawSlider(OptEffects, "EFECTOS");
+            DrawChoice(hits[OptCamera], "CÁMARA: " + (firstPerson ? "PRIMERA PERSONA" : "TERCERA PERSONA"), OptCamera, false, false, false);
+            DrawChoice(hits[OptFull], "PANTALLA COMPLETA    " + (fullscreen ? "SÍ" : "NO"), OptFull, false, false, false);
             string resolution = displayModes.Length == 0
                 ? Screen.width + " × " + Screen.height
                 : displayModes[resolutionIndex].width + " × " + displayModes[resolutionIndex].height;
-            DrawChoice(hits[5], "RESOLUCIÓN    " + resolution, 5, displayModes.Length == 0, false, false);
-            DrawChoice(hits[6], "VOLVER", 6, false, false, false);
-            Label(helpRect, "Izquierda y derecha cambian volumen, cámara y resolución. Enter o A confirman. Esc o B regresan.", smallStyle, Ash);
+            DrawChoice(hits[OptResolution], "RESOLUCIÓN    " + resolution, OptResolution, displayModes.Length == 0, false, false);
+            DrawChoice(hits[OptBack], "VOLVER", OptBack, false, false, false);
+            Label(helpRect, "Izquierda y derecha cambian volumen, cámara, pantalla completa y resolución. Enter o A confirman. Esc o B regresan.", smallStyle, Ash);
         }
 
         void DrawSlider(int index, string label)
@@ -1819,17 +1870,17 @@ namespace Gamejam2026
             Label(briefRect, body, bodyStyle, Idle);
             if (overlay == 1)
             {
-                DrawChoice(hits[0], "CONTINUAR", 0, LanFlow.PeerLost, false, false);
-                DrawChoice(hits[1], "OPCIONES", 1, false, false, false);
-                DrawChoice(hits[2], "VOLVER AL MENÚ", 2, false, false, false);
-                DrawChoice(hits[3], "SALIR", 3, false, false, false);
+                DrawChoice(hits[PauseContinue], "CONTINUAR", PauseContinue, LanFlow.PeerLost, false, false);
+                DrawChoice(hits[PauseOptions], "OPCIONES", PauseOptions, false, false, false);
+                DrawChoice(hits[PauseMenu], "VOLVER AL MENÚ", PauseMenu, false, false, false);
+                DrawChoice(hits[PauseQuit], "SALIR", PauseQuit, false, false, false);
                 Label(statusRect, PauseNumbers(), smallStyle, Ash);
             }
             else
             {
-                DrawChoice(hits[0], LanAuthority.LanMatch ? "CERRAR SALA" : "VOLVER A INTENTAR", 0, false, false, false);
-                DrawChoice(hits[1], "VOLVER AL MENÚ", 1, false, false, false);
-                DrawChoice(hits[2], "SALIR", 2, false, false, false);
+                DrawChoice(hits[ResultRetry], LanAuthority.LanMatch ? "CERRAR SALA" : "VOLVER A INTENTAR", ResultRetry, false, false, false);
+                DrawChoice(hits[ResultMenu], "VOLVER AL MENÚ", ResultMenu, false, false, false);
+                DrawChoice(hits[ResultQuit], "SALIR", ResultQuit, false, false, false);
                 Label(statusRect, LanAuthority.LanMatch
                     ? "Cerrar la sala termina la conexión. Otra expedición se crea desde el menú."
                     : "Reintentar conserva los nombres y empieza de nuevo.", smallStyle, Ash);
@@ -2240,7 +2291,8 @@ namespace Gamejam2026
             RollOrder();
             EquipCrew();
             Investigation = gameObject.AddComponent<RecintoInvestigation>();
-            Investigation.Initialize(this);
+            try { Investigation.Initialize(this); }
+            catch (Exception error) { Debug.LogException(error); }
             ResetLearningTips();
         }
 
@@ -2418,7 +2470,7 @@ namespace Gamejam2026
             }
             LanFlow.Cancel();
             lanMenu = NetMenu.None;
-            focusIndex = 2;
+            focusIndex = MenuBegin;
         }
 
         void RebuildLanItems()

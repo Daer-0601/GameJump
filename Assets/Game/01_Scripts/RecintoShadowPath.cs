@@ -37,6 +37,36 @@ namespace Gamejam2026
             return result;
         }
         public Vector3 Nearest(Vector3 point) { int i = NearestIndex(point); return i < 0 ? point : Point(i); }
+
+        // Celda abierta más cercana al punto pedido, fuera del radio de los jugadores.
+        public bool TryStand(Vector3 preferred, Vector3[] avoid, float clearance, out Vector3 stand)
+        {
+            int best = -1;
+            float bestScore = float.MaxValue;
+            float limit = clearance * clearance;
+            for (int i = 0; i < open.Length; i++)
+            {
+                if (!open[i]) continue;
+                Vector3 point = Point(i);
+                bool crowded = false;
+                if (avoid != null && limit > 0f)
+                {
+                    for (int a = 0; a < avoid.Length; a++)
+                    {
+                        if ((point - avoid[a]).sqrMagnitude < limit) { crowded = true; break; }
+                    }
+                }
+                if (crowded) continue;
+                float score = (point - preferred).sqrMagnitude;
+                if (score >= bestScore) continue;
+                bestScore = score;
+                best = i;
+            }
+            stand = preferred;
+            if (best < 0) return false;
+            stand = Point(best);
+            return true;
+        }
         bool Connected(int a, int b)
         {
             Vector3 from = Point(a) + Vector3.up * .4f, delta = Point(b) - Point(a);

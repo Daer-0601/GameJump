@@ -94,6 +94,11 @@ namespace Gamejam2026
 
         public void SetFirstPerson(bool value, bool immediate)
         {
+            if (firstPerson != value)
+            {
+                lean = 0f;
+                leanVelocity = 0f;
+            }
             firstPerson = value;
             if (!immediate) return;
             viewBlend = value ? 1f : 0f;
