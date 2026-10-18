@@ -25,6 +25,7 @@ namespace Gamejam2026
         static readonly Vector3[] BodySites = { new Vector3(-15,0,24), new Vector3(24,0,70), new Vector3(-12,0,82), new Vector3(31,0,105) };
         AudioSource fright;
         AudioClip burnClip;
+        RecintoThreatPresentation threat;
         Animator shadowAnimator;
         RecintoShadowPath path;
         readonly Queue<Vector3> route = new Queue<Vector3>();
@@ -69,6 +70,9 @@ namespace Gamejam2026
             if (!stain) { stain = MakeMaterial("Humedad orgánica", new Color(.045f,.065f,.035f)); ownsStain = true; }
             insects = MakeMaterial("Insectos", new Color(.025f,.025f,.018f)); larva = MakeMaterial("Larvas", new Color(.43f,.38f,.27f));
             fright = gameObject.AddComponent<AudioSource>(); fright.playOnAwake = false; fright.spatialBlend = 0;
+            threat = GetComponent<RecintoThreatPresentation>();
+            if (!threat) threat = gameObject.AddComponent<RecintoThreatPresentation>();
+            threat.Bind(game);
             burnClip = Resources.Load<AudioClip>("Production/Burn");
             var fire = game.candles[0].gameObject.AddComponent<RecintoSound>(); fire.game = game; fire.clips = new[] { burnClip }; fire.loop = true; fire.volume = .035f; fire.radius = 9;
             RequiredPower = Random.Range(0,3); FalseIndex = Random.Range(0,3); falseMark = game.SymbolAt((FalseIndex + Random.Range(1,3)) % 3);
@@ -135,8 +139,10 @@ namespace Gamejam2026
             if (!source) { Debug.LogError("Falta Production/Shadow; aplica arte desde Gamejam/Producción."); return; }
             shadow = Instantiate(source,transform); shadow.name = "Sombra - amenaza avisada";
             shadow.transform.position = new Vector3(-13,0,27); shadowAnimator = shadow.GetComponentInChildren<Animator>();
-            var crawl = shadow.AddComponent<RecintoSound>(); crawl.game = game; crawl.clips = new[] { Resources.Load<AudioClip>("Production/Crawl") };
-            crawl.loop = true; crawl.onlyWhileShadowMoves = true; crawl.volume = .1f; crawl.radius = 18;
+            var crawl = shadow.AddComponent<RecintoSound>(); crawl.game = game;
+            var crawlClip = threat && threat.Movement ? threat.Movement : Resources.Load<AudioClip>("Production/Crawl");
+            crawl.clips = new[] { crawlClip };
+            crawl.loop = true; crawl.onlyWhileShadowMoves = true; crawl.volume = .07f; crawl.radius = 16;
             path = new RecintoShadowPath();
             path.Build(); shadow.transform.position = path.Nearest(shadow.transform.position);
             retreatPoint = shadow.transform.position;
@@ -228,6 +234,7 @@ namespace Gamejam2026
         {
             if (!game.Playing || !shadow) return;
             game.WarnThreat("Algo cruza fuera de la vela. " + reason);
+            if (threat && shadow) threat.Warn(shadow.transform.position);
             if (travelBudget <= 0) { moveAfter = game.ElapsedSeconds + 3; route.Clear(); shadowTarget = null; }
             travelBudget = Mathf.Min(18,travelBudget + 7);
         }
@@ -246,6 +253,7 @@ namespace Gamejam2026
                 shadowAnimator.speed = navigating ? 1 : 0;
                 if (navigating && !shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl")) shadowAnimator.Play("Crawl");
             }
+            if (threat) threat.NoteMotion(navigating, shadow.transform.position);
             if (navigating)
             {
                 if (route.Count == 0)
@@ -283,8 +291,10 @@ namespace Gamejam2026
             foreach (var p in game.players)
             {
                 if (!p || Vector3.Distance(p.transform.position,shadow.transform.position) > 1.6f || HasCandleLight(p.transform.position + Vector3.up) || watched) continue;
-                contactAfter = game.ElapsedSeconds + 15; game.ShadowContact();
-                Sound(game.lightClip,shadow.transform.position,.2f);
+                contactAfter = game.ElapsedSeconds + 15;
+                bool alreadyTouched = game.ShadowContacts > 0;
+                game.ShadowContact();
+                if (!alreadyTouched && !game.Finished && threat) threat.Contact(shadow.transform.position);
                 retreating = !game.Finished; travelBudget = 0; route.Clear();
                 Vector3 away = shadow.transform.position - p.transform.position; away.y = 0;
                 retreatPoint = path.Nearest(shadow.transform.position + away.normalized * 9); moveAfter = game.ElapsedSeconds;

@@ -33,6 +33,18 @@ Existe un build Windows en `Build/AOscuras/AOscuras.exe`; `Temp/Production.build
 
 Falta una partida humana completa de 12–18 minutos para medir orientación, mezcla de audio, frecuencia de errores, tensión y duración. Ese intervalo es objetivo de diseño, no una duración acreditada por la prueba automática.
 
+## Presentación de la amenaza
+
+No se ejecutó Play Mode para esta capa. Para reproducirla en una expedición nueva:
+
+1. El crescendo sigue en el loop `Ambiente - audio original CC0`: volumen de 0.16 a 0.42 según el peligro, más `AmbientBackground` a volumen fijo. El control de ambiente escala las dos. No es el aviso de la sombra.
+2. Provocar un avance de sombra (vela lejos 7 s, error o luz que delata). Debe sonar `ShadowWarning` una vez y mantenerse el texto «Algo cruza fuera de la vela» durante los 3 s ya definidos.
+3. Cuando gatea, `ShadowMovemtLoop` en loop, más bajo y distinto del aviso. Al dejar de moverse, `ShadowStop` una sola vez y el texto de que se detuvo sin dar la zona por segura.
+4. Primer contacto fuera de la vela: `ShadowContact`, el margen de 15 s y el control siguen. El jumpscare solo suena en la derrota real.
+5. Acercarse una vez al Portón cerrado (hijo del recinto, posición local 0, 2.5, -11): `TocToc` detrás de la puerta, una vez. No abre el portón.
+6. Acercarse una vez a la luz de escena «Luz Patio interior»: parpadeo breve de esa luz y `LightFlicker`, luego vuelve su intensidad. No usa las luces X/Y.
+7. Pausa, reanudar, ganar o perder deben dejar esa luz en su intensidad original. Reintentar o volver al menú recarga la escena y permite oír los dos eventos otra vez.
+
 ## Archivos y packs
 
 - Escena editada incrementalmente: `Assets/Game/00_Scenes/Demo.unity`.

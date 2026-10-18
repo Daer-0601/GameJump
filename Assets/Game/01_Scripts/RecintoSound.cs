@@ -47,10 +47,18 @@ namespace Gamejam2026
         void Update()
         {
             if (!game || !source || clips.Length == 0) return;
-            if (!game.Playing || (onlyWhileShadowMoves && (!game.Investigation || !game.Investigation.ShadowMoving)))
+            bool shadowAllows = !onlyWhileShadowMoves || (game.Investigation && game.Investigation.ShadowMoving);
+            if (!game.Playing || !shadowAllows)
             {
                 source.volume = 0;
+                if (onlyWhileShadowMoves && source.isPlaying) source.Pause();
                 return;
+            }
+            if (loop && !source.isPlaying)
+            {
+                if (!source.clip && clips.Length > 0) source.clip = clips[0];
+                if (source.time > 0.01f) source.UnPause();
+                else source.Play();
             }
             if (Time.time >= probe)
             {

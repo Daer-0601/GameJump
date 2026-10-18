@@ -13957,6 +13957,7 @@ GameObject:
   - component: {fileID: 779294658}
   - component: {fileID: 779294660}
   - component: {fileID: 779294661}
+  - component: {fileID: 904418273}
   m_Layer: 0
   m_Name: Partida - ajustar dificultad aqui
   m_TagString: Untagged
@@ -14008,6 +14009,24 @@ MonoBehaviour:
   stabilizeRelief: 8
   destabilizeMin: 38
   destabilizeMax: 52
+--- !u!114 &904418273
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 779294657}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3a8c1d04e6b47a29b5e8c7d1a0f2e64, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Gamejam2026.RecintoThreatPresentation
+  warning: {fileID: 8300000, guid: ad27f552e9a4f7a4bab4458a237d2aa7, type: 3}
+  movement: {fileID: 8300000, guid: 4f969d8218109324fa1f7d1232ba8cdf, type: 3}
+  stop: {fileID: 8300000, guid: 76ce94b519518d04cb6a597266b7c31a, type: 3}
+  contact: {fileID: 8300000, guid: 1285b8ad8ed36bc4987f718e87af51a8, type: 3}
+  knock: {fileID: 8300000, guid: 05f3dba58d88b4e47813832516305e23, type: 3}
+  flicker: {fileID: 8300000, guid: b48ace4f5b6d6e045b1c0e31910877a0, type: 3}
 --- !u!4 &779294659
 Transform:
   m_ObjectHideFlags: 0
