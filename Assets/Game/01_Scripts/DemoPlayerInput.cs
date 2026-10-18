@@ -29,8 +29,8 @@ namespace Gamejam2026
             }
         }
 
-        public static string UseLabel(int playerIndex) => playerIndex == 0 ? "E" : "U";
-        public static string DropLabel(int playerIndex) => playerIndex == 0 ? "Q" : "O";
+        public static string UseLabel(int playerIndex) => LanAuthority.LanMatch ? "E" : playerIndex == 0 ? "E" : "U";
+        public static string DropLabel(int playerIndex) => LanAuthority.LanMatch ? "Q" : playerIndex == 0 ? "Q" : "O";
         public static string NotebookLabel(int playerIndex) => playerIndex == 0 ? "Tab" : "P";
         public static string PageLabel(int playerIndex) => playerIndex == 0 ? "A / D" : "flechas izq. / der.";
 

@@ -10,7 +10,9 @@ Dos jugadores quedan atrapados en un recinto oscuro durante un incidente que deb
 
 La experiencia busca terror y tensión cooperativa, en tercera persona según el prototipo actual. El reto principal es coordinarse con información y recursos limitados: quién lleva la luz, quién transporta la manivela, cuándo dejar la vela y cómo evitar errores mientras el peligro aumenta. La oscuridad, la iluminación y el sonido acompañan la presión, pero deben dejar claro qué ocurre y qué acción se espera.
 
-El prototipo se juega en una sola escena, `Demo.unity`, que también es la única entrada de Build Settings. El menú no tiene escena propia: `DemoGame` lo dibuja sobre la partida antes de empezar, con el fondo `Assets/Game/02_Materials/UI_menu/Menu.jpg`. Incluye el título **A Oscuras**, el nombre de cada jugador, **INICIAR EXPEDICIÓN**, **OPCIONES** y **SALIR**. Los nombres y el volumen quedan en `PlayerPrefs`. Iniciar muestra una introducción de 5,4 s que se puede saltar con Espacio, Enter o A; el control y el peligro empiezan después. La expedición actual se juega con un teclado compartido y no exige mando.
+El prototipo se juega en una sola escena, `Demo.unity`, que también es la única entrada de Build Settings. El menú no tiene escena propia: `DemoGame` lo dibuja sobre la partida antes de empezar, con el fondo `Assets/Game/02_Materials/UI_menu/Menu.jpg`. Incluye el título **A Oscuras**, el nombre de cada jugador, **INICIAR EXPEDICIÓN**, **CREAR PARTIDA LAN**, **UNIRSE A PARTIDA**, **OPCIONES** y **SALIR**. Los nombres y el volumen quedan en `PlayerPrefs`. Iniciar muestra una introducción de 5,4 s que se puede saltar con Espacio, Enter o A; el control y el peligro empiezan después. La expedición local se juega con un teclado compartido y no exige mando.
+
+La partida LAN usa Netcode for GameObjects 2.13.2 sobre Unity Transport, puerto UDP 7777, solo en la misma red. El anfitrión simula las reglas y genera una sola semilla; el cliente envía su entrada y aplica el estado. Cada PC controla un operario a pantalla completa: el anfitrión empieza con la vela y el cliente con la manivela. El modo local no abre sockets.
 
 Pausa, victoria y derrota usan esa misma interfaz. Desde la pausa también se abre **OPCIONES**. **Volver a intentar** recarga Demo y continúa con los nombres guardados. **Volver al menú** recarga Demo y se detiene en el menú. El volumen se conserva entre sesiones.
 
@@ -45,6 +47,7 @@ El flujo principal vive hoy en una escena. Inspecciona `DemoGame`, `DemoPlayer`,
 - Menú y opciones: flechas, stick, cruceta o ratón para elegir; Enter o A confirman. En un nombre, el teclado escribe. OPCIONES guarda volumen general, ambiente, efectos, pantalla completa y resolución. Esc o B regresan.
 - Partida, teclado compartido: jugador 1 usa WASD, mouse o F/H y T/G para mirar, E para usar, Q para soltar, Tab para el cuaderno, A/D para pasar página y Shift izquierdo para correr. Jugador 2 usa las flechas, J/L e I/K para mirar, U para usar, O para soltar, P para el cuaderno, flechas izq./der. para pasar página y Shift derecho para correr. Escape pausa. El cuaderno es compartido; abrirlo solo detiene a ese jugador.
 - El mando navega el menú. La partida actual no lo usa para moverse ni interactuar.
+- LAN: cada PC usa WASD, ratón, E, Q y Shift. Crear partida muestra la IPv4 y el puerto 7777. Unirse pide esa IP. La expedición empieza cuando los dos marcan listo. Si alguien se desconecta, la sala queda en pausa y se vuelve al menú; no hay reconexión.
 
 Comprueba los controles en código antes de cambiarlos y mantén señales claras de qué jugador puede realizar cada acción.
 

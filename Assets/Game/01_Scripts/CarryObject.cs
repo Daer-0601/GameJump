@@ -13,10 +13,17 @@ namespace Gamejam2026
         Collider[] colliders;
         Coroutine useAnimation;
         public bool Inserting => useAnimation != null;
+        Vector3 homePosition;
+        Quaternion homeRotation;
+        bool homeReady;
+        byte appliedAnchor = 255;
 
         void Awake()
         {
             colliders = GetComponentsInChildren<Collider>();
+            homePosition = transform.position;
+            homeRotation = transform.rotation;
+            homeReady = true;
             if (!isCandle || !candleLight) return;
             foreach (var renderer in GetComponentsInChildren<Renderer>(true))
                 if (renderer.name.StartsWith("Llama")) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -24,6 +31,85 @@ namespace Gamejam2026
             candleLight.shadowNearPlane = 0.05f;
             candleLight.useViewFrustumForShadowCasterCull = false;
             FitCandle();
+        }
+
+        public void RestoreHome()
+        {
+            StopUseAnimation();
+            appliedAnchor = 255;
+            if (owner)
+            {
+                owner.Held = null;
+                owner = null;
+            }
+            transform.SetParent(null, true);
+            if (homeReady) transform.SetPositionAndRotation(homePosition, homeRotation);
+            if (colliders == null) colliders = GetComponentsInChildren<Collider>(true);
+            if (colliders != null)
+                foreach (var col in colliders) if (col) col.enabled = true;
+            gameObject.SetActive(true);
+        }
+
+        public byte CaptureAnchor(DemoMechanism[] mechanisms, out Vector3 position, out float yaw)
+        {
+            position = transform.position;
+            yaw = transform.eulerAngles.y;
+            if (owner) return (byte)(owner.playerIndex == 0 ? 1 : 2);
+            if (mechanisms != null)
+                for (int i = 0; i < mechanisms.Length; i++)
+                    if (mechanisms[i] && mechanisms[i].mountedCrank == this) return (byte)(10 + i);
+            return 0;
+        }
+
+        public void ApplyAnchor(byte code, Vector3 position, float yaw, DemoPlayer[] players, DemoMechanism[] mechanisms)
+        {
+            if (colliders == null) colliders = GetComponentsInChildren<Collider>(true);
+            if (code == 0)
+            {
+                if (appliedAnchor != 0) ReleaseAnchor(mechanisms);
+                appliedAnchor = 0;
+                transform.SetParent(null, true);
+                transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+                if (colliders != null) foreach (var col in colliders) if (col) col.enabled = true;
+                return;
+            }
+            if (code == appliedAnchor) return;
+            ReleaseAnchor(mechanisms);
+            appliedAnchor = code;
+            if (code == 1 || code == 2)
+            {
+                int index = code - 1;
+                if (players == null || index >= players.Length || !players[index] || !players[index].hand) return;
+                owner = players[index];
+                owner.Held = this;
+                if (colliders != null) foreach (var col in colliders) if (col) col.enabled = false;
+                transform.SetParent(owner.hand, false);
+                transform.localPosition = Vector3.zero;
+                transform.localRotation = Quaternion.identity;
+                return;
+            }
+            if (code >= 10 && mechanisms != null)
+            {
+                int index = code - 10;
+                if (index < 0 || index >= mechanisms.Length || !mechanisms[index] || !mechanisms[index].crankSocket) return;
+                mechanisms[index].SetMountedCrank(this);
+                if (colliders != null) foreach (var col in colliders) if (col) col.enabled = false;
+                transform.SetParent(mechanisms[index].crankSocket, false);
+                transform.localPosition = Vector3.zero;
+                transform.localRotation = Quaternion.identity;
+            }
+        }
+
+        void ReleaseAnchor(DemoMechanism[] mechanisms)
+        {
+            if (owner)
+            {
+                if (owner.Held == this) owner.Held = null;
+                owner = null;
+            }
+            if (mechanisms == null) return;
+            for (int i = 0; i < mechanisms.Length; i++)
+                if (mechanisms[i] && mechanisms[i].mountedCrank == this) mechanisms[i].SetMountedCrank(null);
         }
 
         // El modelo importado viene acostado y a escala de utilería. Lo paro y lo dejo de mano.

@@ -8,6 +8,7 @@ namespace Gamejam2026
         public RecintoStation blockedStation;
         public DemoGame game;
         public bool Consumed { get; private set; }
+        public int ReplicaId { get; set; }
         public float Burn01 => progress / 2f;
         float progress;
         int heldFrame = -1;
@@ -33,9 +34,24 @@ namespace Gamejam2026
             }
             return !Consumed;
         }
+        public void ApplyReplica(float burnSeconds, bool consumed)
+        {
+            progress = Mathf.Clamp(burnSeconds, 0f, 2f);
+            if (!consumed || Consumed) return;
+            Consumed = true;
+            if (blockedStation) blockedStation.ClearContamination(this);
+            foreach (var col in GetComponentsInChildren<Collider>()) col.enabled = false;
+            foreach (var ps in GetComponentsInChildren<ParticleSystem>()) ps.Stop();
+        }
+
         void Update()
         {
             if (!game || !game.Playing) return;
+            if (!LanAuthority.Simulates)
+            {
+                PresentBurn();
+                return;
+            }
             if (Consumed)
             {
                 transform.localScale = Vector3.MoveTowards(transform.localScale, Vector3.zero, Time.deltaTime * 1.5f);
@@ -43,6 +59,18 @@ namespace Gamejam2026
                 return;
             }
             if (heldFrame < Time.frameCount - 1) progress = Mathf.Max(0, progress - Time.deltaTime);
+            transform.localScale = size * (1f + Mathf.Sin(Time.time * 2.1f + transform.position.x) * .025f - Burn01 * .45f);
+        }
+
+        void PresentBurn()
+        {
+            if (size == Vector3.zero) size = transform.localScale;
+            if (Consumed)
+            {
+                transform.localScale = Vector3.MoveTowards(transform.localScale, Vector3.zero, Time.unscaledDeltaTime * 1.5f);
+                if (transform.localScale.sqrMagnitude < .001f) Destroy(gameObject);
+                return;
+            }
             transform.localScale = size * (1f + Mathf.Sin(Time.time * 2.1f + transform.position.x) * .025f - Burn01 * .45f);
         }
     }
