@@ -53,3 +53,15 @@ Los sonidos localizados y bancos de pasos que ya incorporó el mapa nuevo conser
 https://creativecommons.org/publicdomain/zero/1.0/
 
 Estos créditos documentan los recursos externos. El código y el montaje inicial de esta demo fueron realizados con asistencia de IA; no deben presentarse como trabajo hecho íntegramente sin IA.
+
+
+## Demo de producción — 17 de octubre de 2026
+
+- **Ultimate Animated Character Pack**, **Quaternius**, **CC0 1.0**. Fuente directa del autor: https://opengameart.org/content/animated-characters-pack . Se importan únicamente `Worker_Female.fbx` y `Worker_Male.fbx` en `Assets/External/QuaterniusWorkers`. Escala a 1,7 m, materiales URP/Lit más apagados y rig genérico. Se usan Idle, Walk, Walk_Carry, PickUp y RecieveHit originales. Las variantes de carrera y sostener objetos se adaptan en el Editor desde esos clips; no se utiliza Mixamo.
+- **Modular Dungeon**, **Quaternius**, **CC0 1.0**. https://opengameart.org/content/lowpoly-modular-dungeon . Únicamente `Candle.fbx` en `Assets/External/QuaterniusDungeon`; escala y materiales URP. La llama se sustituye por una pequeña malla de 8 cm creada en el Editor y animada según la carga; esta geometría procedural original (`Llama.asset`) se dedica a CC0 y no proviene de un generador de modelos.
+- **Spider**, **br-n518**, **CC0 1.0**. https://opengameart.org/node/86785 . `Assets/External/RecintoSpider`: conversión del `.blend` original a FBX con Blender 3.6.23, preservando rig y clips WALK, IDLE y ATTACK, textura original de 256 × 256, escala y material URP/Lit húmedo y oscuro. Se usa WALK para el desplazamiento. Creeping Shadow y sus créditos se conservan como recurso anterior; no se fabrican animaciones para su esqueleto.
+- **Fire Crackling**, **AntumDeluge**, **CC0 1.0**. https://opengameart.org/content/fire-crackling/ . Original `fire-1_0.ogg`, renombrado `Burn.ogg` en `Assets/External/AntumFire`; se reutiliza a volumen bajo para llama y consumo del brote.
+- **Squish Sounds Effects**, **EZduzziteh**, **CC0 1.0**. https://opengameart.org/content/squish-sounds-effects . Original `squish_01_0.mp3`, renombrado `Crawl.mp3` en `Assets/External/EZSquish`; se mezcla a volumen bajo al gatear.
+- **Plumbing** de **chilly_durango**, ya documentado arriba, **CC0**: se reutilizan `Circuit Breaker.fbx` para carcasas/paneles y `Pipe Valve.fbx` para la herramienta metálica. No se incorpora una licencia nueva. El golpe de compuerta reutiliza `metal_slam_01.ogg` de **rubberduck**, CC0, ya presente en AudioFinal.
+
+Los controladores, clips adaptados y prefabs de `Assets/External/AOscurasProduction` se preparan con `DemoProduction.cs`. Sus materiales y adaptaciones se dedican a **CC0 1.0**, conservando la autoría de los originales. Cada carpeta nueva contiene `LICENSE.txt`. No se generaron modelos con IA; el código y el montaje tienen asistencia de Codex. No se añadieron paquetes ni recursos de pago. Licencia CC0: https://creativecommons.org/publicdomain/zero/1.0/ .

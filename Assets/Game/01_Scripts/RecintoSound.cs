@@ -13,6 +13,7 @@ namespace Gamejam2026
         public Vector2 interval = new Vector2(18f, 35f);
         public float startDelay = 8f;
         public bool mixBackground;
+        public bool onlyWhileShadowMoves;
         AudioSource source;
         float next, target, pan, probe;
         int previous = -1;
@@ -46,7 +47,7 @@ namespace Gamejam2026
         void Update()
         {
             if (!game || !source || clips.Length == 0) return;
-            if (!game.Playing)
+            if (!game.Playing || (onlyWhileShadowMoves && (!game.Investigation || !game.Investigation.ShadowMoving)))
             {
                 source.volume = 0;
                 return;
@@ -76,7 +77,7 @@ namespace Gamejam2026
                     }
                 }
             }
-            source.volume = Mathf.MoveTowards(source.volume, target, Time.deltaTime * 0.2f);
+            source.volume = Mathf.MoveTowards(source.volume, target * game.sfxVolume, Time.deltaTime * 0.2f);
             source.panStereo = Mathf.Lerp(source.panStereo, pan, Time.deltaTime * 3f);
             if (!loop && Time.time >= next)
             {

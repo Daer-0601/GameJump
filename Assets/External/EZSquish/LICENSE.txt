@@ -1,0 +1,5 @@
+Author: EZduzziteh
+Source: https://opengameart.org/content/squish-sounds-effects
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+Adaptation: renamed; original audio unchanged.

@@ -45,7 +45,7 @@ namespace Gamejam2026
                 if (!candle || !candle.gameObject.activeInHierarchy || !candle.candleLight || !candle.candleLight.enabled) continue;
                 Vector3 start = candle.candleLight.transform.position;
                 Vector3 offset = transform.position - start;
-                if (offset.magnitude > 3.8f) continue;
+                if (offset.magnitude > Mathf.Min(3.8f, candle.candleLight.range)) continue;
                 bool blocked = false;
                 foreach (var hit in Physics.RaycastAll(start, offset.normalized, offset.magnitude, ~0, QueryTriggerInteraction.Ignore))
                 {

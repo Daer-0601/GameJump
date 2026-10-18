@@ -29,6 +29,8 @@ namespace Gamejam2026
         public float MessageUntil { get; private set; }
         public DemoMechanism Stabilizing { get; private set; }
         public DemoMechanism FocusedMechanism { get; private set; }
+        public bool Working { get; private set; }
+        public float ActualSpeed => controller ? Vector3.ProjectOnPlane(controller.velocity, Vector3.up).magnitude : 0f;
         [Range(0f, 0.03f)] public float shakeAtFullDanger = 0.008f;
         [Range(0f, 0.04f)] public float shakeAtCritical = 0.014f;
         Vector3 viewRest;
@@ -42,6 +44,12 @@ namespace Gamejam2026
         float footstepTimer;
         Vector2 lookVelocity;
         const float FootstepInterval = 0.42f;
+        public void ConfigureCamera(Vector3 position)
+        {
+            viewRest = position;
+            viewRestReady = true;
+            if (view) view.transform.localPosition = position;
+        }
 
         void Awake()
         {
@@ -75,7 +83,16 @@ namespace Gamejam2026
                     Mathf.PerlinNoise(8f + playerIndex, t * 15f) - 0.5f,
                     0f) * amount * 2f;
             }
-            view.transform.localPosition = viewRest + offset;
+            Vector3 pivot = transform.position + Vector3.up * 1.45f;
+            Vector3 desired = transform.TransformPoint(viewRest + offset);
+            Vector3 direction = desired - pivot;
+            float distance = direction.magnitude;
+            foreach (var hit in Physics.SphereCastAll(pivot, .16f, direction.normalized, distance, ~0, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider.GetComponentInParent<DemoPlayer>() || hit.collider.GetComponentInParent<CarryObject>()) continue;
+                distance = Mathf.Min(distance, Mathf.Max(.25f, hit.distance - .12f));
+            }
+            view.transform.position = pivot + direction.normalized * distance;
         }
 
         public void Tell(string text, float seconds = 3f)
@@ -98,6 +115,7 @@ namespace Gamejam2026
             }
             if (!game || !game.PlayerInputEnabled)
             {
+                Working = false;
                 Stabilizing = null;
                 FocusedMechanism = null;
                 lookVelocity = Vector2.zero;
@@ -121,8 +139,8 @@ namespace Gamejam2026
                 look = lookVelocity * Time.deltaTime;
             }
             transform.Rotate(0f, look.x, 0f);
-            pitch = Mathf.Clamp(pitch - look.y, -75f, 75f);
-            view.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+            pitch = Mathf.Clamp(pitch - look.y, -35f, 60f);
+            view.transform.localRotation = Quaternion.Euler(pitch + 9f, 0f, 0f);
         }
 
         static float ApproachLook(float current, float target, float step)
@@ -139,7 +157,7 @@ namespace Gamejam2026
             fallSpeed += Physics.gravity.y * Time.deltaTime;
             float speedMultiplier = input.Run && Stabilizing == null ? Mathf.Max(1f, runMultiplier) : 1f;
             if (Held != null && !Held.isCandle) speedMultiplier *= Mathf.Clamp(crankSpeedMultiplier, 0.1f, 1f);
-            Vector2 movement = Stabilizing == null ? input.Move : Vector2.zero;
+            Vector2 movement = Stabilizing == null && !Working ? input.Move : Vector2.zero;
             var motion = transform.TransformDirection(new Vector3(movement.x, 0f, movement.y));
             controller.Move((motion * moveSpeed * speedMultiplier + Vector3.up * fallSpeed) * Time.deltaTime);
 
@@ -161,6 +179,7 @@ namespace Gamejam2026
         void Interact(bool use, bool useHeld, bool drop)
         {
             Hint = string.Empty;
+            Working = false;
             Stabilizing = null;
             FocusedMechanism = null;
             if (drop && Held != null)
@@ -172,16 +191,28 @@ namespace Gamejam2026
                 useHeld = false;
             }
             var ray = new Ray(view.transform.position, view.transform.forward);
-            if (Physics.Raycast(ray, out var hit, reach, ~0, QueryTriggerInteraction.Ignore))
+            float cameraOffset = Vector3.Distance(view.transform.position, transform.position + Vector3.up * 1.3f);
+            var hits = Physics.RaycastAll(ray, reach + cameraOffset, ~0, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (var hit in hits)
             {
+                if (hit.collider.GetComponentInParent<DemoPlayer>()) continue;
+                if (Vector3.Distance(transform.position + Vector3.up, hit.point) > reach + .35f) break;
                 var station = hit.collider.GetComponentInParent<RecintoStation>();
+                var growth = hit.collider.GetComponentInParent<RecintoContamination>();
                 var item = hit.collider.GetComponentInParent<CarryObject>();
                 var mechanism = hit.collider.GetComponentInParent<DemoMechanism>();
                 var clue = hit.collider.GetComponentInParent<DemoClue>();
-                if (station != null)
+                if (growth != null && !growth.Consumed)
+                {
+                    Hint = growth.Hint(this);
+                    Working = growth.Hold(this, useHeld);
+                }
+                else if (station != null)
                 {
                     Hint = station.Hint(this);
                     station.Interact(this, use, useHeld);
+                    Working = useHeld && station.AcceptsWork;
                 }
                 else if (item != null && item.owner == null)
                 {
@@ -197,10 +228,10 @@ namespace Gamejam2026
                     if (mechanism.unstable)
                     {
                         FocusedMechanism = mechanism;
-                        if (useHeld && mechanism.done) Stabilizing = mechanism;
+                        if (useHeld && mechanism.done && (!Held || Held.isCandle)) { Stabilizing = mechanism; Working = true; }
                         mechanism.Hold(this, useHeld);
                         int percent = Mathf.RoundToInt(mechanism.Hold01 * 100f);
-                        Hint = mechanism.unstable
+                        Hint = Held && !Held.isCandle ? mechanism.GetHint(this) : mechanism.unstable
                             ? UseHint(useHeld ? "Estabilizando " + mechanism.symbol + "  " + percent + "% (sin moverse)"
                                 : "Mantener para estabilizar " + mechanism.symbol)
                             : mechanism.GetHint(this);
@@ -221,7 +252,7 @@ namespace Gamejam2026
                     bool readable = clue.CanRead(game);
                     string action = clue.nextSymbolOnly ? "Leer siguiente símbolo" : "Leer la inscripción";
                     Hint = game.Investigation && !game.Investigation.Ready
-                        ? "La inscripción está incompleta: busquen tres registros"
+                        ? game.Investigation.NextTask
                         : readable ? UseHint(action) : "Acerca la vela para leer";
                     if (clue.nextSymbolOnly && readable && string.IsNullOrEmpty(game.NextSymbol)) Hint = "No quedan símbolos pendientes";
                     if (use && clue.TryRead(game, out string text))
@@ -230,6 +261,7 @@ namespace Gamejam2026
                         readingClue = clue;
                     }
                 }
+                break;
             }
         }
 

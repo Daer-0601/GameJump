@@ -60,6 +60,63 @@ namespace Gamejam2026
         public string NextSymbol => completed < order.Length ? mechanisms[order[completed]].symbol : string.Empty;
         public event Action<DemoMechanism> FirstMechanismCompleted;
         public event Action<bool> RoundFinished;
+        public float CandleCharge { get; private set; } = 1f;
+        public float CandleRange => Mathf.Lerp(2.8f, 7f, CandleCharge);
+        public bool Containing { get; private set; }
+        public float Containment01 { get; private set; }
+        public int ShadowContacts { get; private set; }
+        public string DefeatCause { get; private set; } = "errores de procedimiento";
+        public bool CandleBurst => Containing && elapsed % 4.7f < .28f;
+        string threatText;
+        float threatUntil;
+        float contactFlashUntil;
+        public void WarnThreat(string message)
+        {
+            threatText = message; threatUntil = elapsed + 7;
+            Notify(message, 7);
+        }
+        public string DangerWords => Danger >= 90 ? "crítico" : Danger >= dangerAlarmThreshold ? "inestable" : "en observación";
+        public static readonly Vector3 WorkshopSeal = new Vector3(-20f, .05f, 105f);
+        public static readonly Vector3 PumpSeal = new Vector3(34f, .05f, 109f);
+        public string ContainmentHint => "Contención: uno en la sala de TALLER 04 y otro en BOMBAS 05; permanezcan dentro de salas distintas";
+        public static Bounds SealRoom(bool workshop) => workshop
+            ? new Bounds(new Vector3(-19, 1, 101), new Vector3(18, 4, 22))
+            : new Bounds(new Vector3(33, 1, 108), new Vector3(14, 4, 16));
+        public bool InSeal(DemoPlayer player, bool workshop)
+        {
+            if (!player) return false;
+            return SealRoom(workshop).Contains(player.transform.position);
+        }
+        public bool SealsOccupied => players.Length == 2 && ((InSeal(players[0], true) && InSeal(players[1], false)) || (InSeal(players[1], true) && InSeal(players[0], false)));
+        public void Notify(string message, float seconds = 5f)
+        {
+            foreach (var p in players) if (p) p.Tell(message, seconds);
+        }
+        public void RestoreCandle()
+        {
+            if (!Playing) return;
+            CandleCharge = Mathf.Clamp01(CandleCharge + 30f / 360f);
+            Notify("Brote consumido. La vela recupera alcance (+30 s de cera).", 4);
+        }
+        public void AddDanger(float amount, string cause)
+        {
+            if (!Playing) return;
+            DefeatCause = cause;
+            Danger = Mathf.Clamp(Danger + amount, 0, 100);
+            NoteDangerBand();
+            if (Danger >= 100) Finish(false);
+        }
+        public void ShadowContact()
+        {
+            if (!Playing) return;
+            ShadowContacts++;
+            if (ShadowContacts > 1) { DefeatCause = "segundo contacto con la sombra fuera de la vela"; Finish(false); return; }
+            if (atmosphere) atmosphere.WrongOrder();
+            contactFlashUntil = elapsed + .08f;
+            foreach (var p in players) { var motion = p.GetComponent<DemoMotion>(); if (motion) motion.Recoil(); }
+            Notify("La sombra os rozó. Ha retrocedido. Otro contacto fuera de la vela termina la expedición. +15%", 7);
+            AddDanger(15, "contacto con la sombra");
+        }
 
         int[] order = { 0, 1, 2 };
         int completed;
@@ -248,10 +305,19 @@ namespace Gamejam2026
             if (!Playing) return;
 
             elapsed += Time.deltaTime;
+            CandleCharge = Mathf.Max(0, CandleCharge - Time.deltaTime / 360f);
             DestabilizeDue();
             // Investigation starts without a death clock. Only unresolved damage keeps pressure rising.
-            float rate = CountUnstable() * unstablePenalty;
-            Danger = Mathf.Clamp(Danger + rate * Time.deltaTime, 0f, 100f);
+            int loose = CountUnstable();
+            float rate = loose > 1 ? unstablePenalty * (1f + (loose - 1) * 1.6f) : loose * unstablePenalty;
+            if (rate > 0) AddDanger(rate * Time.deltaTime, "mecanismos desajustados sin estabilizar");
+            if (!Playing) return;
+            if (Containing)
+            {
+                bool holding = loose == 0 && SealsOccupied;
+                Containment01 = Mathf.Clamp01(Containment01 + Time.deltaTime * (holding ? 1f : -1.7f) / 25f);
+                if (Containment01 >= 1f) { Finish(true); return; }
+            }
             NoteDangerBand();
             if (!hitchSpent && Danger >= criticalDanger && Time.timeScale > 0.95f)
             {
@@ -275,21 +341,27 @@ namespace Gamejam2026
 
         public void Activate(DemoMechanism mechanism, DemoPlayer player)
         {
-            if (!Playing || mechanism.done) return;
-            if (Investigation && !Investigation.Ready)
+            if (!Playing || !mechanism || mechanism.done || completed >= order.Length) return;
+            if (Investigation && !Investigation.CanAttempt)
             {
-                if (player) player.Tell("Completen registros, consola y red auxiliar antes del mecanismo.");
+                if (player) player.Tell(Investigation.NextTask);
                 return;
             }
-            if (mechanism.id != order[completed])
+            bool unverified = Investigation && !Investigation.Contrasted;
+            if (unverified || mechanism.id != order[completed])
             {
-                Danger = Mathf.Min(100f, Danger + errorPenalty);
+                AddDanger(errorPenalty, "errores de orden en los mecanismos");
                 disturbanceUntil = elapsed + 2f;
                 if (atmosphere) atmosphere.WrongOrder();
                 PlaySfx(errorClip);
-                foreach (var teammate in players) teammate.Tell("¡CLAC! Orden incorrecto. Los pasos correctos se conservan.");
-                if (Investigation) Investigation.OnWrongProcedure();
+                string consequence = Investigation ? Investigation.OnWrongProcedure() : "";
+                Notify("¡CLAC! " + (unverified ? "Datos sin contrastar: procedimiento incorrecto" : "Orden incorrecto") + " (+12%). " + consequence + " Los aciertos se conservan.", 7);
                 if (Danger >= 100f) Finish(false);
+                return;
+            }
+            if (Investigation && !Investigation.Ready)
+            {
+                if (player) player.Tell(Investigation.NextTask);
                 return;
             }
             mechanism.done = true;
@@ -297,7 +369,7 @@ namespace Gamejam2026
             if (completed == 1)
             {
                 FirstMechanismCompleted?.Invoke(mechanism);
-                Pulse("El paso se abre");
+                Notify("¡GOLPE EN LA COMPUERTA! El primer sello ha abierto el paso.", 5);
             }
             if (nextDestabilize < 0f) ScheduleDestabilize();
             PlaySfx(gearsClip);
@@ -321,7 +393,10 @@ namespace Gamejam2026
 
         void TryWin()
         {
-            if (completed == order.Length && !AnyUnstable()) Finish(true);
+            if (completed != order.Length || AnyUnstable() || Containing || finished) return;
+            Containing = true;
+            Containment01 = 0;
+            Notify(ContainmentHint + ". Sostengan 25 segundos.", 10);
         }
 
         void ScheduleDestabilize()
@@ -347,8 +422,7 @@ namespace Gamejam2026
                 disturbanceUntil = elapsed + 1.6f;
                 PlaySfx(dangerClip);
                 Pulse(pick.symbol + " desajustado");
-                foreach (var teammate in players)
-                    if (teammate) teammate.Tell(pick.symbol + " se desajusto. Estabilizalo sin la manivela.");
+                Notify(pick.symbol + " se desajustó. " + (CountUnstable() > 1 ? "DOS averías: el peligro sube más rápido. " : "") + "Mantener 1,5 s, quieto y sin manivela.", 7);
             }
             ScheduleDestabilize();
         }
@@ -1279,7 +1353,7 @@ namespace Gamejam2026
         {
             DrawTracked(titleRect, "A Oscuras", glyphStyle, 7f, Paper);
             Rule(titleRect.center.x, titleRect.yMax + 2f, 168f);
-            Label(briefRect, "Exploren el recinto: recuperen tres registros y contrasten la consola juntos. Activen la red auxiliar que indique el procedimiento. La manivela sirve para los mecanismos al final.", bodyStyle, Ash);
+            Label(briefRect, "Un registro miente: contrastad juntos. La vela quema la contaminación.", bodyStyle, Ash);
 
             DrawName(0, "Nombre del jugador 1");
             DrawName(1, "Nombre del jugador 2");
@@ -1396,21 +1470,36 @@ namespace Gamejam2026
             {
                 float left = i * width * 0.5f;
                 float half = width * 0.5f;
-                Box(new Rect(left + 16f, 16f, half - 32f, 78f), new Color(0.015f, 0.014f, 0.012f, 0.9f));
-                Box(new Rect(left + 16f, 16f, 2f, 78f), Paper);
-                Label(new Rect(left + 28f, 22f, 28f, 26f), (i + 1).ToString(), hudStyle, Ash);
+                Box(new Rect(left + 16f, 16f, half - 32f, 146f), new Color(.015f,.014f,.012f,.94f));
+                Box(new Rect(left + 16f, 16f, 2f, 146f), Paper);
                 string held = players[i].Held ? players[i].Held.displayName : "manos libres";
-                if (players[i].Held && !players[i].Held.isCandle) held += " (pesada)";
-                Label(new Rect(left + 56f, 22f, half - 84f, 26f), PlayerLabel(i) + "   /   " + held, hudStyle, Paper);
+                Label(new Rect(left + 28, 20, half - 56, 26), "J" + (i+1) + "  " + PlayerLabel(i) + "  /  " + held, hudStyle, Paper);
+                if (Investigation)
+                {
+                    Label(new Rect(left + 28, 48, half - 56, 22), "Registros  " + Investigation.EvidenceSummary + "   Consola: " + (Investigation.Contrasted ? "VERIFICADA" : "PENDIENTE"), hudSmallStyle, Paper);
+                    string circuit = Investigation.RequiredPower == 0 ? "opcional" : Mathf.Min(Investigation.SurveyedPower, Investigation.RequiredPower) + "/" + Investigation.RequiredPower;
+                    Label(new Rect(left + 28, 70, half - 56, 22), "Red " + circuit + "   " + Investigation.LightSummary, hudSmallStyle, Paper);
+                }
                 int loose = CountUnstable();
-                string danger = Investigation && !Investigation.Ready
-                    ? "Registros " + Investigation.EvidenceSummary + (Investigation.Contrasted ? "   consola OK" : "   falta consola")
-                        + "   red " + Investigation.PoweredCount + "/" + Investigation.RequiredPower
-                    : completed + "/3 mecanismos    recinto " + (Danger >= 90f ? "crítico" : Danger >= dangerAlarmThreshold ? "inestable" : "en observación");
-                if (loose > 0) danger += "    " + loose + (loose == 1 ? " desajustado" : " desajustados");
-                if (Danger >= dangerAlarmThreshold) danger += "    alto";
-                if (Time.unscaledTime < pulseUntil) danger += "    " + pulseText;
-                Label(new Rect(left + 56f, 52f, half - 84f, 24f), danger, hudSmallStyle, Danger >= dangerAlarmThreshold ? Accent : Ash);
+                string status = "Peligro " + DangerWords.ToUpperInvariant() + " " + Danger.ToString("0") + "%   |   Sellos " + completed + "/3";
+                status += "   |   Vela " + CandleRange.ToString("0.0") + " m" + (CandleCharge <= 0 ? " (poca luz)" : CandleCharge < .5f ? " (chisporrotea)" : "");
+                Label(new Rect(left + 28, 92, half - 56, 22), status, hudSmallStyle, Paper);
+                string task = loose > 0 ? loose + " mecanismos desajustados: mantener 1,5 s, quieto y sin manivela. " + (loose > 1 ? "DOS averías: peligro acelerado." : "")
+                    : Investigation ? Investigation.NextTask : "Busquen los registros";
+                Label(new Rect(left + 28, 116, half - 56, 40), task, hudStyle, Paper);
+                if (Containing)
+                {
+                    Label(new Rect(left + 28, 164, half - 56, 24), "CONTENCIÓN " + Mathf.RoundToInt(Containment01 * 100) + "% — " + (SealsOccupied && loose == 0 ? "AMBAS SALAS OCUPADAS" : "RETROCEDE: ocupad dos salas y estabilizad"), hudSmallStyle, Paper);
+                    Box(new Rect(left + 28, 191, half - 56, 7), Ash);
+                    Box(new Rect(left + 28, 191, (half - 56) * Containment01, 7), Paper);
+                }
+                if (elapsed < threatUntil)
+                {
+                    float y = Containing ? 304 : 274;
+                    Box(new Rect(left + 22, y, half - 44, 54), new Color(.015f,.014f,.012f,.94f));
+                    Label(new Rect(left + 36, y + 5, half - 72, 44), threatText, hudStyle, Paper);
+                }
+                if (elapsed < contactFlashUntil) Box(new Rect(left, 0, half, height), new Color(.55f,.49f,.38f,.09f));
 
                 float centerX = left + half * 0.5f;
                 float centerY = height * 0.5f;
@@ -1442,8 +1531,8 @@ namespace Gamejam2026
                 }
                 if (Time.unscaledTime < players[i].MessageUntil)
                 {
-                    Box(new Rect(left + 22f, 108f, half - 44f, 86f), new Color(0.015f, 0.014f, 0.012f, 0.92f));
-                    Label(new Rect(left + 36f, 118f, half - 72f, 66f), players[i].Message, hudStyle, Paper);
+                    Box(new Rect(left + 22f, Containing ? 210f : 176f, half - 44f, 86f), new Color(0.015f, 0.014f, 0.012f, 0.92f));
+                    Label(new Rect(left + 36f, Containing ? 220f : 186f, half - 72f, 66f), players[i].Message, hudStyle, Paper);
                 }
             }
         }
@@ -1459,7 +1548,7 @@ namespace Gamejam2026
             string who = PlayerLabel(0) + " y " + PlayerLabel(1);
             string clock = " Tiempo " + FormatTime(elapsed) + ".";
             if (won) return who + " se coordinaron y cerraron el incidente." + clock;
-            return "El peligro llegó al límite y alcanzó a " + who + "." + clock + " Pueden repartir la luz y la manivela de otra forma.";
+            return "Expedición de " + who + " interrumpida por " + DefeatCause + "." + clock;
         }
 
         string HelpText()

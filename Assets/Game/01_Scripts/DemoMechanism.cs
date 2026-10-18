@@ -105,9 +105,13 @@ namespace Gamejam2026
         public string GetHint(DemoPlayer player)
         {
             if (player == null) return string.Empty;
-            if (!done && game.Investigation && !game.Investigation.Ready)
-                return "Faltan registros, contraste o red auxiliar";
+            if (unstable && player.Held && !player.Held.isCandle) return "Suelta la manivela para estabilizar (" + DemoPlayerInput.DropLabel(player.playerIndex) + ")";
+            if (!done && game.Investigation && !game.Investigation.CanAttempt)
+                return game.Investigation.NextTask;
             string useKey = "[" + DemoPlayerInput.UseLabel(player.playerIndex) + "] ";
+
+            if (!done && !HasCrank && player.Held && !player.Held.isCandle && game.Investigation && !game.Investigation.Contrasted)
+                return useKey + "Colocar SIN CONTRASTE: error (+12%). Busquen primero la consola";
 
             if (HasCrank)
             {
@@ -128,9 +132,9 @@ namespace Gamejam2026
         public bool AttachCrank(CarryObject crank, DemoPlayer player)
         {
             if (HasCrank || crank == null || crank.isCandle) return false;
-            if (!done && game.Investigation && !game.Investigation.Ready)
+            if (!done && game.Investigation && !game.Investigation.CanAttempt)
             {
-                if (player) player.Tell("Primero completen registros, consola y red auxiliar.");
+                if (player) player.Tell(game.Investigation.NextTask);
                 return false;
             }
             mountedCrank = crank;
@@ -196,7 +200,7 @@ namespace Gamejam2026
 
         public void Hold(DemoPlayer player, bool holding)
         {
-            if (!game.PlayerInputEnabled || !done || !unstable || !holding || player == null) return;
+            if (!game.PlayerInputEnabled || !done || !unstable || !holding || player == null || (player.Held && !player.Held.isCandle)) return;
             heldThisFrame = true;
             if (lastHoldFrame == Time.frameCount) return;
             lastHoldFrame = Time.frameCount;

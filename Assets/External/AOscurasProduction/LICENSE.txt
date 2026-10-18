@@ -1,0 +1,6 @@
+A Oscuras production adaptations
+CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/
+Worker rigs/animations and Candle: Quaternius, https://opengameart.org/content/animated-characters-pack and https://opengameart.org/content/lowpoly-modular-dungeon (CC0).
+Spider: br-n518, https://opengameart.org/node/86785 (CC0).
+Station casing and hand valve: chilly_durango, https://chilly-durango.itch.io/3d-retro-plumbing-wiring (CC0), already credited in CREDITOS.md.
+URP materials, generic Animator controllers and adapted run/hold clips assembled in DemoProduction.cs with Codex assistance. No AI-generated model was imported or created for this pass. Original source credits retained in their pack folders.

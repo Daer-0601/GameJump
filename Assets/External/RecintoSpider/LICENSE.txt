@@ -1,0 +1,5 @@
+Author: br-n518
+Source: https://opengameart.org/node/86785
+License: CC0 1.0 Universal (declared by author on the source page)
+https://creativecommons.org/publicdomain/zero/1.0/
+Adaptations: URP materials, metre scale; Spider converted from original Blender source to FBX preserving WALK, IDLE and ATTACK. Workers and candle use original FBX.

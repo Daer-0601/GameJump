@@ -16,12 +16,18 @@ namespace Gamejam2026
         float lastYaw;
         float turn;
         float smoothSpeed;
+        public Animator animator;
+        public Transform grip;
+        string state;
+        float recoilUntil;
+        public void Recoil() { recoilUntil = Time.time + .35f; }
         Quaternion[] armOrigins;
         Vector3[] armScales;
 
         void Start()
         {
             player = GetComponent<DemoPlayer>();
+            if (animator) animator.applyRootMotion = false;
             lastPosition = transform.position;
             handOrigin = player.hand.localPosition;
             if (visual) visualOrigin = visual.localPosition;
@@ -42,11 +48,26 @@ namespace Gamejam2026
             float yaw = Mathf.DeltaAngle(lastYaw, transform.eulerAngles.y);
             lastYaw = transform.eulerAngles.y;
             if (!player || !player.game.Playing) return;
-            float speed = Time.deltaTime > 0f ? Mathf.Min(displacement.magnitude / Time.deltaTime, player.moveSpeed * player.runMultiplier) : 0f;
+            float speed = player.ActualSpeed;
             float teleportDistance = Mathf.Max(1f, player.moveSpeed * player.runMultiplier * Time.deltaTime * 2f);
             if (displacement.magnitude > teleportDistance) speed = 0f;
             float blend = 1f - Mathf.Exp(-Time.deltaTime * 12f);
             smoothSpeed = Mathf.Lerp(smoothSpeed, speed, blend);
+            if (animator && animator.runtimeAnimatorController)
+            {
+                animator.SetFloat("Speed", smoothSpeed);
+                animator.SetBool("Crank", player.Held && !player.Held.isCandle);
+                animator.SetBool("Candle", player.Held && player.Held.isCandle);
+                string target = Time.time < recoilUntil ? "Recoil" : player.Working ? "Interact" :
+                    player.Held ? (player.Held.isCandle ? "Candle" : "Crank") : "Locomotion";
+                if (target != state) { animator.CrossFadeInFixedTime(target == "Interact" ? "UseEnter" : target, .14f); state = target; }
+                if (grip && player.Held && !player.Held.Inserting)
+                {
+                    player.hand.position = grip.position;
+                    player.hand.rotation = grip.rotation;
+                }
+                return;
+            }
             turn = Mathf.Lerp(turn, Mathf.Clamp(yaw / Mathf.Max(Time.deltaTime, .001f), -160f, 160f), blend);
             float movement = Mathf.Clamp01(smoothSpeed / player.moveSpeed);
             float running = Mathf.InverseLerp(player.moveSpeed, player.moveSpeed * player.runMultiplier, smoothSpeed);

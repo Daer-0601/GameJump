@@ -56,7 +56,9 @@ namespace Gamejam2026
             {
                 openingSoundPlayed = true;
                 float effects = game ? game.sfxVolume : 0.8f;
-                openingSource.PlayOneShot(openingClip, effects * 0.85f);
+                float distance = float.MaxValue;
+                if (game) foreach (var p in game.players) if (p) distance = Mathf.Min(distance, Vector3.Distance(p.transform.position, transform.position));
+                openingSource.PlayOneShot(openingClip, effects * .4f * Mathf.Clamp01(1f - distance / 50f));
             }
             onOpening?.Invoke();
             if (openingSeconds <= 0f) Apply(1f);

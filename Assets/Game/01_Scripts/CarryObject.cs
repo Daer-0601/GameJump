@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace Gamejam2026
 {
+    [DefaultExecutionOrder(50)]
     public class CarryObject : MonoBehaviour
     {
         public bool isCandle;
@@ -16,6 +17,12 @@ namespace Gamejam2026
         void Awake()
         {
             colliders = GetComponentsInChildren<Collider>();
+        }
+        void LateUpdate()
+        {
+            // The imported hand has a different bone basis; wax and flame stay upright.
+            if (isCandle && owner && !Inserting)
+                transform.rotation = Quaternion.Euler(0, owner.transform.eulerAngles.y, 0);
         }
 
         public void PickUp(DemoPlayer player)

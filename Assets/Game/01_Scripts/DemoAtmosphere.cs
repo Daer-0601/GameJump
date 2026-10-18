@@ -15,13 +15,10 @@ namespace Gamejam2026
         Vignette vignette;
         FilmGrain grain;
         ChromaticAberration aberration;
-        ColorAdjustments colors;
         bool ended;
         bool victory;
         float ending;
         float shock;
-        float nextMono = 2f;
-        float monoUntil;
         [Range(0.7f, 1f)] public float monoDanger = 0.85f;
         public float monoSeconds = 0.07f;
         public float monoGap = 2.2f;
@@ -61,7 +58,6 @@ namespace Gamejam2026
             grain = profile.Add<FilmGrain>(true);
             grain.type.Override(FilmGrainLookup.Thin1);
             aberration = profile.Add<ChromaticAberration>(true);
-            colors = profile.Add<ColorAdjustments>(true);
         }
 
         public void WrongOrder() { shock = 1f; }
@@ -96,18 +92,6 @@ namespace Gamejam2026
             vignette.intensity.Override(Mathf.Lerp(0.22f + danger * 0.18f + critical * 0.08f + shock * 0.13f + disturbance * 0.035f, 0.12f, relief));
             grain.intensity.Override(Mathf.Lerp(0.12f + danger * 0.22f, 0.04f, relief));
             aberration.intensity.Override(Mathf.Lerp(0.015f + danger * 0.055f + shock * 0.06f, 0f, relief));
-            bool mono = false;
-            if (game.Playing && danger >= monoDanger)
-            {
-                if (Time.time >= nextMono)
-                {
-                    nextMono = Time.time + Mathf.Max(0.4f, monoGap);
-                    monoUntil = Time.time + Mathf.Clamp(monoSeconds, 0.03f, 0.15f);
-                }
-                mono = Time.time < monoUntil;
-            }
-            colors.saturation.Override(mono ? -100f : 0f);
-            colors.postExposure.Override(-Blackout * 8f - critical * 0.22f);
             if (victory && victoryLights != null)
             {
                 foreach (var light in victoryLights) if (light) light.intensity = relief * 4f;
@@ -118,8 +102,9 @@ namespace Gamejam2026
                 // Never enable a light here: the spare candle and a lost game's flame stay off.
                 if (!candle || !candle.gameObject.activeInHierarchy || !candle.candleLight || !candle.candleLight.enabled) continue;
                 float noise = Mathf.PerlinNoise(Time.time * 3.2f, 7.3f);
-                candle.candleLight.intensity = Mathf.Lerp(4.4f, 5.5f, noise);
-                candle.candleLight.range = 5.8f;
+                bool sputter = game.CandleCharge < .5f && Mathf.Sin(Time.time * 29f) > .95f;
+                candle.candleLight.intensity = Mathf.Lerp(4.4f, 5.5f, noise) * (game.CandleBurst ? .2f : sputter ? .72f : 1f);
+                candle.candleLight.range = game.CandleRange * (game.CandleBurst ? .6f : 1f);
                 candle.candleLight.color = new Color(1f, 0.65f, 0.30f);
             }
         }
