@@ -22,7 +22,10 @@ namespace Gamejam2026
         [Range(0.1f, 1f)] public float preciseLookMultiplier = 0.35f;
         public float reach = 2.6f;
         public CarryObject Held { get; set; }
-        public string Hint { get; private set; }
+        string hint;
+        public string Hint { get => FocusedStation ? FocusedStation.Hint(this) : hint; private set => hint = value; }
+        public RecintoStation FocusedStation { get; private set; }
+        public bool NeedsFreeHand { get; private set; }
         public string DropHint => Held == null ? string.Empty
             : "[" + DemoPlayerInput.DropLabel(playerIndex) + "] Soltar " + Held.displayName + " al suelo";
         public string Message { get; private set; }
@@ -121,6 +124,8 @@ namespace Gamejam2026
                 Working = false;
                 Stabilizing = null;
                 FocusedMechanism = null;
+                FocusedStation = null;
+                NeedsFreeHand = false;
                 crankHeld = false;
                 crankHold = 0f;
                 crankTarget = null;
@@ -188,6 +193,8 @@ namespace Gamejam2026
             Working = false;
             Stabilizing = null;
             FocusedMechanism = null;
+            FocusedStation = null;
+            NeedsFreeHand = false;
             bool wasCrankHeld = crankHeld;
             float wasCrankHold = crankHold;
             DemoMechanism wasCrankTarget = crankTarget;
@@ -197,6 +204,7 @@ namespace Gamejam2026
                 string itemName = Held.displayName;
                 Held.Drop();
                 Tell(itemName + " en el suelo.");
+                if (game) game.NotifyObjectDropped(playerIndex);
                 use = false;
                 useHeld = false;
             }
@@ -215,17 +223,20 @@ namespace Gamejam2026
                 var clue = hit.collider.GetComponentInParent<DemoClue>();
                 if (growth != null && !growth.Consumed)
                 {
+                    NeedsFreeHand = Held && !Held.isCandle;
                     Hint = growth.Hint(this);
                     Working = growth.Hold(this, useHeld);
                 }
                 else if (station != null)
                 {
-                    Hint = station.Hint(this);
+                    FocusedStation = station;
+                    NeedsFreeHand = station.Contaminated && Held && !Held.isCandle;
                     station.Interact(this, use, useHeld);
                     Working = useHeld && station.AcceptsWork;
                 }
                 else if (item != null && item.owner == null)
                 {
+                    NeedsFreeHand = Held != null;
                     Hint = Held == null ? UseHint("Recoger " + item.displayName) : "Manos ocupadas: suelta el objeto primero";
                     if (use && Held == null)
                     {
@@ -236,6 +247,13 @@ namespace Gamejam2026
                 else if (mechanism != null)
                 {
                     FocusedMechanism = mechanism;
+                    if (Held)
+                    {
+                        if (mechanism.unstable) NeedsFreeHand = !Held.isCandle;
+                        else if (mechanism.IsBraceAim(hit)) NeedsFreeHand = mechanism.HasCrank && !Held.isCandle;
+                        else if (mechanism.done || !game.Investigation || game.Investigation.CanAttempt)
+                            NeedsFreeHand = mechanism.HasCrank ? mechanism.done || !Held.isCandle : Held.isCandle;
+                    }
                     if (mechanism.unstable)
                     {
                         if (useHeld && mechanism.done && (!Held || Held.isCandle)) { Stabilizing = mechanism; Working = true; }

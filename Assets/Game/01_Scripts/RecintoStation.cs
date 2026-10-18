@@ -11,12 +11,14 @@ namespace Gamejam2026
         bool holdEvidence, complete, surveyed, betrayed;
         float progress, tapDeadline, expires, lampDuration;
         readonly int[] heldFrame = { -1, -1 };
+        readonly bool[] contrastHolding = new bool[2];
         Light workLight;
         Renderer lamp;
         TextMesh label;
         RecintoContamination contamination;
         public bool IsPowerOn => role == Role.Power && complete;
         public bool Surveyed => role == Role.Power && surveyed;
+        public bool IsContrastStation => role == Role.Synchronize;
         public bool Contaminated => contamination && !contamination.Consumed;
         public bool AcceptsWork => !Contaminated && !complete && (role != Role.Synchronize || director.EvidenceCount == 3);
         public float SecondsLeft => IsPowerOn ? Mathf.Max(0, expires - game.ElapsedSeconds) : 0;
@@ -60,13 +62,45 @@ namespace Gamejam2026
         }
         public string Hint(DemoPlayer player)
         {
-            if (Contaminated) return "Contaminación en " + name + ": quema el brote con la vela";
+            if (player == null) return string.Empty;
             string key = "[" + DemoPlayerInput.UseLabel(player.playerIndex) + "] ";
-            if (IsPowerOn) return key + "Apagar " + name + " — " + Status;
-            if (complete) return role == Role.Evidence ? name + ": " + director.DisplayedSymbol(evidenceIndex) : "Consola verificada; un registro era falso";
-            if (role == Role.Synchronize) return director.EvidenceCount < 3 ? "Recupera los tres registros antes de contrastar" : key + "Ambos mantener: contrastar " + Mathf.RoundToInt(progress / 2.5f * 100) + "%";
-            if (role == Role.Power) return key + "Mantener: encender " + name + " (delata en " + Mathf.RoundToInt(lampDuration) + " s)";
-            return holdEvidence ? key + "Mantener: leer " + name + " " + Mathf.RoundToInt(progress / 2 * 100) + "%" : key + "Pulsar tres veces: " + name + " " + taps + "/3";
+            if (Contaminated) return key + "Con la vela en la mano, mantener 2 s sobre el brote de " + name;
+            if (IsPowerOn) return key + "Apagar " + name + (betrayed ? " — está delatando vuestra posición" : " — delata en " + Status);
+            if (complete)
+            {
+                if (role == Role.Evidence) return name + " — Marca " + director.DisplayedSymbol(evidenceIndex) + (director.FalseRevealed && director.FalseIndex == evidenceIndex ? " (CORREGIDO Y VERIFICADO)" : "");
+                if (role == Role.Synchronize) return "Consola de contraste: VERIFICADA. Se identificó el registro falso; seguid el orden verificado";
+                return name + " inspeccionada (red registrada)";
+            }
+            if (role == Role.Synchronize)
+            {
+                if (director.EvidenceCount < 3) return "Consola de contraste: recuperad primero los 3 registros (" + director.EvidenceCount + "/3)";
+                int myIdx = player.playerIndex;
+                int otherIdx = 1 - myIdx;
+                bool myHeld = game.PlayerInputEnabled && myIdx >= 0 && myIdx < 2 && contrastHolding[myIdx];
+                bool otherHeld = game.PlayerInputEnabled && otherIdx >= 0 && otherIdx < 2 && contrastHolding[otherIdx];
+                string myKey = DemoPlayerInput.UseLabel(myIdx);
+                string otherKey = DemoPlayerInput.UseLabel(otherIdx);
+                int percent = Mathf.RoundToInt(progress / 2.5f * 100f);
+                if (myHeld && otherHeld)
+                    return "[" + myKey + "] Contrastando " + percent + "%. Mantened ambos hasta el 100%.";
+                if (myHeld)
+                    return "[" + myKey + "] Esperando al compañero (" + percent + "%). J" + (otherIdx + 1) + " debe mantener [" + otherKey + "] a la vez.";
+                if (otherHeld)
+                    return "[" + myKey + "] Tu compañero está esperando (" + percent + "%). Mantén pulsado para contrastar.";
+                return "[" + myKey + "] Mantener para contrastar. Cooperativo: J" + (myIdx + 1) + " [" + myKey + "] y J" + (otherIdx + 1) + " [" + otherKey + "] a la vez.";
+            }
+            if (role == Role.Power)
+            {
+                int percent = Mathf.RoundToInt(progress / 2.5f * 100f);
+                return key + "Mantener para encender " + name + " (" + percent + "%). Alumbra la zona " + Mathf.RoundToInt(lampDuration) + " s.";
+            }
+            if (holdEvidence)
+            {
+                int percent = Mathf.RoundToInt(progress / 2f * 100f);
+                return key + "Mantener para registrar datos (" + percent + "%).";
+            }
+            return key + "Pulsar para registrar datos (" + taps + "/3 pulsaciones).";
         }
         public void Interact(DemoPlayer player, bool pressed, bool held)
         {
@@ -95,6 +129,8 @@ namespace Gamejam2026
         }
         void LateUpdate()
         {
+            for (int i = 0; i < contrastHolding.Length; i++)
+                contrastHolding[i] = game && game.PlayerInputEnabled && heldFrame[i] == Time.frameCount;
             if (!AcceptsWork || !game || !game.Playing || (role == Role.Evidence && !holdEvidence)) return;
             bool active = role == Role.Synchronize ? heldFrame[0] == Time.frameCount && heldFrame[1] == Time.frameCount : heldFrame[0] == Time.frameCount || heldFrame[1] == Time.frameCount;
             progress = Mathf.Clamp(progress + (active ? 1 : -.7f) * Time.deltaTime, 0, 2.5f);
@@ -105,7 +141,12 @@ namespace Gamejam2026
             complete = true; progress = 0;
             if (lamp) lamp.sharedMaterial = director.ActiveLamp;
             if (role == Role.Evidence) director.RecordEvidence(evidenceIndex);
-            else if (role == Role.Synchronize) director.RecordSynchronization();
+            else if (role == Role.Synchronize)
+            {
+                director.RecordSynchronization();
+                for (int i = 0; i < contrastHolding.Length; i++)
+                    if (contrastHolding[i]) game.NotifyContrastCompleted(i);
+            }
             else
             {
                 surveyed = true; betrayed = false; expires = game.ElapsedSeconds + lampDuration;

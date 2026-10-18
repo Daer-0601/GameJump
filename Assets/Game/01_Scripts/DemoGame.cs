@@ -118,6 +118,118 @@ namespace Gamejam2026
             AddDanger(15, "contacto con la sombra");
         }
 
+        readonly bool[] helpDropDismissed = new bool[2];
+        readonly bool[] helpContrastDismissed = new bool[2];
+        readonly bool[] helpStabilizeDismissed = new bool[2];
+
+        public void ResetLearningTips()
+        {
+            Array.Clear(helpDropDismissed, 0, helpDropDismissed.Length);
+            Array.Clear(helpContrastDismissed, 0, helpContrastDismissed.Length);
+            Array.Clear(helpStabilizeDismissed, 0, helpStabilizeDismissed.Length);
+        }
+
+        public void NotifyObjectDropped(int playerIndex)
+        {
+            if (playerIndex >= 0 && playerIndex < helpDropDismissed.Length)
+                helpDropDismissed[playerIndex] = true;
+        }
+
+        public void NotifyContrastCompleted(int playerIndex)
+        {
+            if (playerIndex >= 0 && playerIndex < helpContrastDismissed.Length)
+                helpContrastDismissed[playerIndex] = true;
+        }
+
+        public string WorkshopOccupancyString()
+        {
+            bool j1 = players.Length > 0 && InSeal(players[0], true);
+            bool j2 = players.Length > 1 && InSeal(players[1], true);
+            if (j1 && j2) return "TALLER 04: J1 + J2";
+            if (j1) return "TALLER 04: J1";
+            if (j2) return "TALLER 04: J2";
+            return "TALLER 04: VACÍO";
+        }
+
+        public string PumpOccupancyString()
+        {
+            bool j1 = players.Length > 0 && InSeal(players[0], false);
+            bool j2 = players.Length > 1 && InSeal(players[1], false);
+            if (j1 && j2) return "BOMBAS 05: J1 + J2";
+            if (j1) return "BOMBAS 05: J1";
+            if (j2) return "BOMBAS 05: J2";
+            return "BOMBAS 05: VACÍO";
+        }
+
+        public string ContainmentStatusText(out bool isHolding)
+        {
+            int loose = CountUnstable();
+            bool j1Workshop = players.Length > 0 && InSeal(players[0], true);
+            bool j1Pump = players.Length > 0 && InSeal(players[0], false);
+            bool j2Workshop = players.Length > 1 && InSeal(players[1], true);
+            bool j2Pump = players.Length > 1 && InSeal(players[1], false);
+
+            bool workshopOccupied = j1Workshop || j2Workshop;
+            bool pumpOccupied = j1Pump || j2Pump;
+            bool bothWorkshop = j1Workshop && j2Workshop;
+            bool bothPump = j1Pump && j2Pump;
+
+            isHolding = SealsOccupied && loose == 0;
+
+            if (isHolding)
+                return "AVANZANDO (+4%/s) — Ambas salas ocupadas y sin averías activas.";
+
+            if (loose > 0 && !SealsOccupied)
+                return "RETROCEDE: " + loose + " mecanismo(s) desajustado(s) y salas sin cubrir. Estabilizad y cubrid ambas salas.";
+
+            if (loose > 0)
+                return "RETROCEDE: Avería activa en el recinto (" + loose + " desajustado" + (loose > 1 ? "s" : "") + "). Estabilizad para continuar.";
+
+            if (bothWorkshop)
+                return "RETROCEDE: Ambos operarios están en TALLER 04. Un operario debe vigilar BOMBAS 05.";
+
+            if (bothPump)
+                return "RETROCEDE: Ambos operarios están en BOMBAS 05. Un operario debe vigilar TALLER 04.";
+
+            if (!workshopOccupied && !pumpOccupied)
+                return "RETROCEDE: Ambas salas desiertas. Un operario a TALLER 04 y otro a BOMBAS 05.";
+
+            if (!workshopOccupied)
+                return "RETROCEDE: TALLER 04 desatendido. Un operario debe permanecer dentro.";
+
+            if (!pumpOccupied)
+                return "RETROCEDE: BOMBAS 05 desatendido. Un operario debe permanecer dentro.";
+
+            return "RETROCEDE: Cubrid ambas salas a la vez y reparad desajustes para contener.";
+        }
+
+        public string GetPlayerTip(int i)
+        {
+            if (i < 0 || i >= players.Length || players[i] == null) return null;
+            var player = players[i];
+            int index = player.playerIndex;
+            if (index < 0 || index >= helpDropDismissed.Length) return null;
+            string useKey = DemoPlayerInput.UseLabel(index);
+            string dropKey = DemoPlayerInput.DropLabel(index);
+
+            if (player.Held && player.NeedsFreeHand && !helpDropDismissed[index])
+                return "AYUDA: [" + dropKey + "] suelta " + player.Held.displayName + " al suelo para liberar la mano.";
+
+            if (!helpStabilizeDismissed[index] && player.FocusedMechanism && player.FocusedMechanism.unstable)
+            {
+                return "AYUDA: sin manivela, mantén [" + useKey + "] 1,5 s para estabilizar. Soltar o apartar la mirada interrumpe.";
+            }
+
+            if (!helpContrastDismissed[index] && Investigation && Investigation.EvidenceCount == 3 && !Investigation.Contrasted
+                && player.FocusedStation && player.FocusedStation.IsContrastStation && !player.FocusedStation.Contaminated)
+            {
+                string otherKey = DemoPlayerInput.UseLabel(1 - index);
+                return "AYUDA: mantén [" + useKey + "] y tu compañero [" + otherKey + "] en esta consola durante 2,5 s para corregir el dato falso.";
+            }
+
+            return null;
+        }
+
         int[] order = { 0, 1, 2 };
         int completed;
         bool started;
@@ -247,6 +359,7 @@ namespace Gamejam2026
             atmosphere.Initialize(this);
             Investigation = gameObject.AddComponent<RecintoInvestigation>();
             Investigation.Initialize(this);
+            ResetLearningTips();
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             if (ambience) ambience.Play();
@@ -260,6 +373,7 @@ namespace Gamejam2026
         public void Begin()
         {
             if (transitioning) return;
+            ResetLearningTips();
             name1 = CleanName(name1, "Jugador 1");
             name2 = CleanName(name2, "Jugador 2");
             SaveNames();
@@ -384,6 +498,8 @@ namespace Gamejam2026
         public void OnStabilized(DemoMechanism mechanism, DemoPlayer player)
         {
             if (!Playing || mechanism == null || player == null) return;
+            if (player.playerIndex >= 0 && player.playerIndex < helpStabilizeDismissed.Length)
+                helpStabilizeDismissed[player.playerIndex] = true;
             PlaySfx(gearsClip);
             Pulse(mechanism.symbol + " estable");
             Danger = Mathf.Max(0f, Danger - stabilizeRelief);
@@ -1463,77 +1579,127 @@ namespace Gamejam2026
             Label(new Rect(textX, hit.y, hit.width - (textX - hit.x) - 8f, hit.height), text, optionStyle, ink);
         }
 
+        string ImmediateObjective()
+        {
+            int loose = CountUnstable();
+            if (loose > 0) return "OBJETIVO: estabilizar " + loose + " mecanismo(s) sin llevar la manivela.";
+            if (Containing) return "OBJETIVO: uno en TALLER 04 y otro en BOMBAS 05 hasta contener.";
+            if (!Investigation) return "OBJETIVO: localizar los registros y descubrir la secuencia.";
+            if (Investigation.EvidenceCount < 3)
+                return "OBJETIVO: recuperar registros (" + Investigation.EvidenceCount + "/3). Quemad los brotes que bloquean paneles.";
+            if (!Investigation.Contrasted) return "OBJETIVO: contrastar juntos los tres registros en la consola.";
+            if (Investigation.SurveyedPower < Investigation.RequiredPower)
+                return "OBJETIVO: inspeccionar " + (Investigation.RequiredPower - Investigation.SurveyedPower)
+                    + " luz/luces auxiliares. Encendedlas y apagadlas antes del aviso.";
+            return "OBJETIVO: activar " + NextSymbol + ". Uno sujeta el asa; otro gira la manivela.";
+        }
+
+        float HudPanelHeight(string text, float width, GUIStyle style, bool progress = false)
+        {
+            return Mathf.Ceil(style.CalcHeight(new GUIContent(text), width - 24f)) + 16f + (progress ? 16f : 0f);
+        }
+
+        float DrawHudPanel(float x, float y, float width, string text, GUIStyle style, Color accent, float progress = -1f)
+        {
+            float height = HudPanelHeight(text, width, style, progress >= 0f);
+            Box(new Rect(x, y, width, height), new Color(0.015f, 0.014f, 0.012f, 0.94f));
+            Box(new Rect(x, y, 3f, height), accent);
+            float textHeight = height - 16f - (progress >= 0f ? 16f : 0f);
+            Label(new Rect(x + 12f, y + 8f, width - 24f, textHeight), text, style, Paper);
+            if (progress >= 0f)
+            {
+                var bar = new Rect(x + 12f, y + height - 14f, width - 24f, 8f);
+                Box(bar, new Color(0.16f, 0.14f, 0.12f));
+                bar.width *= Mathf.Clamp01(progress);
+                Box(bar, accent);
+            }
+            return height + 6f;
+        }
+
+        void DrawHudBottomPanel(float x, ref float bottom, float width, string text, GUIStyle style, Color accent, float progress = -1f)
+        {
+            bottom -= HudPanelHeight(text, width, style, progress >= 0f);
+            DrawHudPanel(x, bottom, width, text, style, accent, progress);
+            bottom -= 6f;
+        }
+
         void DrawHud(float width, float height)
         {
             Box(new Rect(width * 0.5f - 1f, 0f, 2f, height), Color.black);
             for (int i = 0; i < players.Length; i++)
             {
+                var player = players[i];
+                if (!player) continue;
                 float left = i * width * 0.5f;
                 float half = width * 0.5f;
-                Box(new Rect(left + 16f, 16f, half - 32f, 146f), new Color(.015f,.014f,.012f,.94f));
-                Box(new Rect(left + 16f, 16f, 2f, 146f), Paper);
-                string held = players[i].Held ? players[i].Held.displayName : "manos libres";
-                Label(new Rect(left + 28, 20, half - 56, 26), "J" + (i+1) + "  " + PlayerLabel(i) + "  /  " + held, hudStyle, Paper);
+                float x = left + 16f;
+                float panelWidth = half - 32f;
+                float top = 12f;
+                bool threatVisible = elapsed < threatUntil && !string.IsNullOrEmpty(threatText);
+                string held = player.Held ? player.Held.displayName : "manos libres";
+                string identity = "J" + (player.playerIndex + 1) + "  " + PlayerLabel(i) + "  /  " + held;
+                top += DrawHudPanel(x, top, panelWidth, identity + "\n" + ImmediateObjective(), hudStyle, Paper);
+
+                if (threatVisible)
+                    top += DrawHudPanel(x, top, panelWidth, "AMENAZA: " + threatText, hudStyle, Accent);
+
+                string marks = Investigation ? "Marcas " + Investigation.EvidenceSummary
+                    + " | Consola " + (Investigation.Contrasted ? "verificada" : "pendiente") : "Marcas sin descubrir";
+                string resources = "Peligro " + Danger.ToString("0") + "% (" + DangerWords + ") | Sellos " + completed + "/3"
+                    + " | Vela " + CandleRange.ToString("0.0") + " m"
+                    + (CandleCharge <= 0 ? " (luz mínima)" : CandleCharge < 0.5f ? " (chisporrotea)" : "");
+                string summary = marks + "\n" + resources;
                 if (Investigation)
                 {
-                    Label(new Rect(left + 28, 48, half - 56, 22), "Registros  " + Investigation.EvidenceSummary + "   Consola: " + (Investigation.Contrasted ? "VERIFICADA" : "PENDIENTE"), hudSmallStyle, Paper);
-                    string circuit = Investigation.RequiredPower == 0 ? "opcional" : Mathf.Min(Investigation.SurveyedPower, Investigation.RequiredPower) + "/" + Investigation.RequiredPower;
-                    Label(new Rect(left + 28, 70, half - 56, 22), "Red " + circuit + "   " + Investigation.LightSummary, hudSmallStyle, Paper);
+                    string circuit = Investigation.RequiredPower == 0 ? "opcional"
+                        : Mathf.Min(Investigation.SurveyedPower, Investigation.RequiredPower) + "/" + Investigation.RequiredPower;
+                    summary += "\nRed " + circuit + " | " + Investigation.LightSummary;
                 }
-                int loose = CountUnstable();
-                string status = "Peligro " + DangerWords.ToUpperInvariant() + " " + Danger.ToString("0") + "%   |   Sellos " + completed + "/3";
-                status += "   |   Vela " + CandleRange.ToString("0.0") + " m" + (CandleCharge <= 0 ? " (poca luz)" : CandleCharge < .5f ? " (chisporrotea)" : "");
-                Label(new Rect(left + 28, 92, half - 56, 22), status, hudSmallStyle, Paper);
-                string task = loose > 0 ? loose + " mecanismos desajustados: mantener 1,5 s, quieto y sin manivela. " + (loose > 1 ? "DOS averías: peligro acelerado." : "")
-                    : Investigation ? Investigation.NextTask : "Busquen los registros";
-                Label(new Rect(left + 28, 116, half - 56, 40), task, hudStyle, Paper);
+                top += DrawHudPanel(x, top, panelWidth, summary, hudSmallStyle, Ash);
+
                 if (Containing)
                 {
-                    Label(new Rect(left + 28, 164, half - 56, 24), "CONTENCIÓN " + Mathf.RoundToInt(Containment01 * 100) + "% — " + (SealsOccupied && loose == 0 ? "AMBAS SALAS OCUPADAS" : "RETROCEDE: ocupad dos salas y estabilizad"), hudSmallStyle, Paper);
-                    Box(new Rect(left + 28, 191, half - 56, 7), Ash);
-                    Box(new Rect(left + 28, 191, (half - 56) * Containment01, 7), Paper);
+                    string status = ContainmentStatusText(out bool advancing);
+                    string containment = "CONTENCIÓN " + Mathf.RoundToInt(Containment01 * 100f) + "%\n"
+                        + WorkshopOccupancyString() + " | " + PumpOccupancyString() + "\n" + status;
+                    top += DrawHudPanel(x, top, panelWidth, containment, hudSmallStyle, advancing ? Paper : Accent, Containment01);
                 }
-                if (elapsed < threatUntil)
-                {
-                    float y = Containing ? 304 : 274;
-                    Box(new Rect(left + 22, y, half - 44, 54), new Color(.015f,.014f,.012f,.94f));
-                    Label(new Rect(left + 36, y + 5, half - 72, 44), threatText, hudStyle, Paper);
-                }
-                if (elapsed < contactFlashUntil) Box(new Rect(left, 0, half, height), new Color(.55f,.49f,.38f,.09f));
 
+                if (elapsed < contactFlashUntil) Box(new Rect(left, 0, half, height), new Color(.55f, .49f, .38f, .09f));
                 float centerX = left + half * 0.5f;
                 float centerY = height * 0.5f;
                 Box(new Rect(centerX - 7f, centerY - 0.5f, 14f, 1f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
                 Box(new Rect(centerX - 0.5f, centerY - 7f, 1f, 14f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
 
-                string prompt = players[i].Hint;
-                string dropPrompt = players[i].DropHint;
-                bool hasPrompt = !string.IsNullOrEmpty(prompt);
-                bool hasDropPrompt = !string.IsNullOrEmpty(dropPrompt);
-                float panelHeight = hasPrompt ? (hasDropPrompt ? 92f : 64f) : 40f;
-                float panelTop = height - 48f - panelHeight;
-                var focus = players[i].FocusedMechanism;
+                float bottom = height - 16f;
+                string prompt = player.Hint;
+                if (!string.IsNullOrEmpty(player.DropHint))
+                    prompt = string.IsNullOrEmpty(prompt) ? player.DropHint : prompt + "\n" + player.DropHint;
+                if (!string.IsNullOrEmpty(prompt))
+                    DrawHudBottomPanel(x, ref bottom, panelWidth, prompt, hudStyle, Paper);
+
+                var focus = player.FocusedMechanism;
                 if (focus && focus.unstable)
                 {
-                    float y = panelTop - 40f;
-                    int percent = Mathf.RoundToInt(focus.Hold01 * 100f);
-                    string key = DemoPlayerInput.UseLabel(i);
-                    string state = players[i].Stabilizing != null ? "estabilizando" : "desajustado";
-                    Label(new Rect(left + 36f, y - 16f, half - 72f, 16f), focus.symbol + "  " + state + "  [" + key + "] mantener  " + percent + "%", hudSmallStyle, Paper);
-                    Box(new Rect(left + 36f, y, half - 72f, 8f), new Color(0.12f, 0.1f, 0.08f));
-                    Box(new Rect(left + 36f, y, (half - 72f) * focus.Hold01, 8f), players[i].Stabilizing != null ? Accent : Paper);
+                    string state = player.Stabilizing ? "ESTABILIZANDO" : "DESAJUSTADO";
+                    string repair = focus.symbol + " " + state + " " + Mathf.RoundToInt(focus.Hold01 * 100f) + "%"
+                        + " | [" + DemoPlayerInput.UseLabel(player.playerIndex) + "] mantener sin manivela";
+                    DrawHudBottomPanel(x, ref bottom, panelWidth, repair, hudSmallStyle, Accent, focus.Hold01);
                 }
-                if (hasPrompt || hasDropPrompt)
+                else if (focus && !focus.done && focus.HasCrank && focus.Cooperation01 > 0f)
                 {
-                    Box(new Rect(left + 22f, panelTop, half - 44f, panelHeight), new Color(0.015f, 0.014f, 0.012f, 0.9f));
-                    if (hasPrompt) Label(new Rect(left + 36f, panelTop + 10f, half - 72f, 48f), prompt, hudStyle, Paper);
-                    if (hasDropPrompt) Label(new Rect(left + 36f, height - 78f, half - 72f, 24f), dropPrompt, hudSmallStyle, Paper);
+                    string cooperation = focus.symbol + " ACTIVACIÓN CONJUNTA " + Mathf.RoundToInt(focus.Cooperation01 * 100f) + "%";
+                    DrawHudBottomPanel(x, ref bottom, panelWidth, cooperation, hudSmallStyle, Paper, focus.Cooperation01);
                 }
-                if (Time.unscaledTime < players[i].MessageUntil)
-                {
-                    Box(new Rect(left + 22f, Containing ? 210f : 176f, half - 44f, 86f), new Color(0.015f, 0.014f, 0.012f, 0.92f));
-                    Label(new Rect(left + 36f, Containing ? 220f : 186f, half - 72f, 66f), players[i].Message, hudStyle, Paper);
-                }
+
+                if (Time.unscaledTime < player.MessageUntil && !string.IsNullOrEmpty(player.Message)
+                    && (!threatVisible || player.Message != threatText))
+                    DrawHudBottomPanel(x, ref bottom, panelWidth, player.Message, hudSmallStyle, Ash);
+
+                string tip = GetPlayerTip(i);
+                if (!string.IsNullOrEmpty(tip)
+                    && bottom - HudPanelHeight(tip, panelWidth, hudSmallStyle) >= Mathf.Max(top + 12f, centerY + 36f))
+                    DrawHudBottomPanel(x, ref bottom, panelWidth, tip, hudSmallStyle, new Color(0.86f, 0.72f, 0.40f));
             }
         }
 
@@ -1638,7 +1804,7 @@ namespace Gamejam2026
             fieldStyle = Style(22, FontStyle.Normal, TextAnchor.MiddleLeft, false);
             smallStyle = Style(14, FontStyle.Normal, TextAnchor.UpperLeft, true);
             hudStyle = Style(18, FontStyle.Normal, TextAnchor.MiddleLeft, true);
-            hudSmallStyle = Style(14, FontStyle.Normal, TextAnchor.MiddleLeft, false);
+            hudSmallStyle = Style(18, FontStyle.Normal, TextAnchor.MiddleLeft, true);
             stylesReady = true;
         }
 
