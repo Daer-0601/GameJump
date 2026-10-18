@@ -17,12 +17,77 @@ namespace Gamejam2026
         void Awake()
         {
             colliders = GetComponentsInChildren<Collider>();
+            if (!isCandle || !candleLight) return;
+            foreach (var renderer in GetComponentsInChildren<Renderer>(true))
+                if (renderer.name.StartsWith("Llama")) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            candleLight.shadows = LightShadows.Soft;
+            candleLight.shadowNearPlane = 0.05f;
+            candleLight.useViewFrustumForShadowCasterCull = false;
+            FitCandle();
         }
+
+        // El modelo importado viene acostado y a escala de utilería. Lo paro y lo dejo de mano.
+        void FitCandle()
+        {
+            var wax = transform.Find("Vela importada");
+            if (!wax) return;
+            foreach (var renderer in GetComponentsInChildren<Renderer>(true))
+            {
+                string name = renderer.name;
+                if (name.StartsWith("Cera ") || name.StartsWith("Llama provisional") || name == "Llama nucleo" || name == "Llama")
+                    renderer.enabled = false;
+            }
+            wax.localRotation = Quaternion.identity;
+            wax.localPosition = Vector3.zero;
+            var renderers = wax.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return;
+            Bounds bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            Vector3 size = bounds.size;
+            if (size.z >= size.x && size.z >= size.y) wax.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            else if (size.x >= size.y) wax.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            float longest = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
+            if (longest > 0.001f) wax.localScale *= 0.2f / longest;
+            bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            Vector3 basePoint = transform.InverseTransformPoint(new Vector3(bounds.center.x, bounds.min.y, bounds.center.z));
+            wax.localPosition -= basePoint;
+            bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            var flame = transform.Find("Llama animada");
+            if (flame)
+            {
+                Vector3 wick = transform.InverseTransformPoint(new Vector3(bounds.center.x, bounds.max.y, bounds.center.z));
+                flame.localPosition = wick + Vector3.up * 0.004f;
+                flame.localRotation = Quaternion.identity;
+                flame.localScale = Vector3.one * 0.42f;
+            }
+            if (candleLight)
+                candleLight.transform.localPosition = (flame ? flame.localPosition : Vector3.up * 0.2f) + new Vector3(0f, 0.015f, 0.04f);
+        }
+        static readonly Vector3 CandleGrip = new Vector3(0.01f, 0.045f, 0.02f);
+        static readonly Vector3 CrankGrip = new Vector3(0.02f, 0.02f, 0.05f);
+
         void LateUpdate()
         {
-            // The imported hand has a different bone basis; wax and flame stay upright.
-            if (isCandle && owner && !Inserting)
-                transform.rotation = Quaternion.Euler(0, owner.transform.eulerAngles.y, 0);
+            if (isCandle && candleLight) candleLight.transform.rotation = Quaternion.identity;
+            if (!owner || Inserting) return;
+            float settle = 1f - Mathf.Exp(-Time.deltaTime * 16f);
+            if (isCandle)
+            {
+                float stride = Mathf.Clamp01(owner.ActualSpeed / Mathf.Max(0.2f, owner.moveSpeed));
+                float step = Mathf.Sin(Time.time * 6.4f);
+                float carry = Mathf.Lerp(0.15f, 1f, stride);
+                Vector3 grip = CandleGrip + new Vector3(step * 0.006f * carry, Mathf.Abs(step) * 0.008f * stride, 0f);
+                transform.localPosition = Vector3.Lerp(transform.localPosition, grip, settle);
+                var upright = Quaternion.Euler(step * 1.4f * carry, owner.transform.eulerAngles.y, -step * 3.2f * carry);
+                transform.rotation = Quaternion.Slerp(transform.rotation, upright, settle);
+                return;
+            }
+            transform.localPosition = Vector3.Lerp(transform.localPosition, CrankGrip, settle);
+            transform.localRotation = Quaternion.Slerp(transform.localRotation, Quaternion.identity, settle);
         }
 
         public void PickUp(DemoPlayer player)
@@ -32,7 +97,16 @@ namespace Gamejam2026
             owner = player;
             player.Held = this;
             foreach (var col in colliders) col.enabled = false;
+            Vector3 worldScale = isCandle ? transform.lossyScale : Vector3.one;
             transform.SetParent(player.hand, false);
+            if (isCandle)
+            {
+                Vector3 boneScale = player.hand.lossyScale;
+                transform.localScale = new Vector3(
+                    worldScale.x / Mathf.Max(0.0001f, boneScale.x),
+                    worldScale.y / Mathf.Max(0.0001f, boneScale.y),
+                    worldScale.z / Mathf.Max(0.0001f, boneScale.z));
+            }
             transform.localPosition = Vector3.zero;
             transform.localRotation = Quaternion.identity;
         }

@@ -58,6 +58,7 @@ public static class DemoCheck
             Require(game.players[0].Held && game.players[0].Held.isCandle, "jugador 1 empieza con la vela");
             Require(game.players[1].Held && !game.players[1].Held.isCandle, "jugador 2 empieza con la manivela");
             game.Begin();
+            game.SkipIntro();
             Require(game.Playing, "iniciar sin requerir mandos");
             if (phase == 1)
             {

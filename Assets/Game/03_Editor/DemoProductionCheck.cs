@@ -78,7 +78,10 @@ public class DemoProductionProbe : MonoBehaviour
         {
             var motion = player.GetComponent<DemoMotion>();
             Require(motion && motion.animator && motion.animator.runtimeAnimatorController && motion.grip,"operario con rig, Animator y agarre " + player.playerIndex);
-            Require(player.view.transform.localPosition.z < -2,"cámara en tercera persona " + player.playerIndex);
+            Vector3 cam = player.view.transform.localPosition;
+            bool third = cam.z < -2f;
+            bool eyes = cam.y > 1.2f && cam.z > -0.5f;
+            Require(third || eyes,"cámara en tercera o en los ojos " + player.playerIndex);
         }
         var sites = (Vector3[])typeof(RecintoInvestigation).GetField("Sites",BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
         for (int index = 0; index < sites.Length; index++)
@@ -96,7 +99,7 @@ public class DemoProductionProbe : MonoBehaviour
             }
             Require(accessible,"puesto posible " + index + " tiene acceso físico y panel visible");
         }
-        Require(game.Investigation.Shadow && game.Investigation.Shadow.GetComponentInChildren<Animator>(),"sombra con rig y controlador importados");
+        Require(game.Investigation.Shadow == null,"la araña no entra al recinto");
         ScreenCapture.CaptureScreenshot("Temp/ProductionMenu.png");
         original = Keyboard.current; keyboard = InputSystem.AddDevice<Keyboard>();
         InputSystem.QueueStateEvent(keyboard,new KeyboardState(Key.W,Key.LeftShift,Key.UpArrow,Key.RightShift,Key.E,Key.U)); InputSystem.Update();
@@ -106,7 +109,7 @@ public class DemoProductionProbe : MonoBehaviour
         InputSystem.QueueStateEvent(keyboard,new KeyboardState(Key.I,Key.L,Key.RightCtrl)); InputSystem.Update(); var precise = DemoPlayerInput.Read(1,115,0,.02f);
         Require(Mathf.Approximately(precise.Look.magnitude,b.Look.magnitude * .35f),"Ctrl derecho conserva precisión J2");
         InputSystem.QueueStateEvent(keyboard,new KeyboardState()); InputSystem.Update();
-        game.Begin(); yield return null;
+        game.Begin(); game.SkipIntro(); yield return null;
         yield return new WaitForSecondsRealtime(.2f);
         ScreenCapture.CaptureScreenshot("Temp/ProductionGameplay.png"); yield return null;
         foreach (var player in game.players) player.enabled = false;
@@ -183,29 +186,8 @@ public class DemoProductionProbe : MonoBehaviour
         Require(investigation.Ready && light.SecondsLeft >= 44 && light.SecondsLeft <= 70,"luz avisa 45–70 s y completa inspección");
         Call(light,"SwitchOff"); Require(!light.IsPowerOn && light.SecondsLeft == 0 && investigation.Ready,"apagar cancela el aviso y conserva inspección");
         Call(light,"Complete"); Set(light,"expires",game.ElapsedSeconds - 1); yield return null;
-        Require((float)Get(investigation,"travelBudget") > 0,"luz vencida permite un tramo de sombra con vela cerca"); Call(light,"SwitchOff");
+        Require(investigation.Shadow == null,"la luz vencida ya no llama a la araña"); Call(light,"SwitchOff");
         foreach (var station in investigation.Stations.Where(s => s.IsPowerOn)) Call(station,"SwitchOff");
-        var savedPosition = game.players[0].transform.position; var savedLook = game.players[0].view.transform.localRotation;
-        Place(game.players[0],new Vector3(-13,0,24));
-        game.players[0].view.transform.LookAt(investigation.Shadow.transform.position + Vector3.up * .25f);
-        Set(investigation,"moveAfter",game.ElapsedSeconds - 1);
-        var shadowPosition = investigation.Shadow.transform.position;
-        Call(investigation,"UpdateShadow");
-        Require(!investigation.ShadowMoving && investigation.Shadow.transform.position == shadowPosition,"sombra se detiene al verla en una cámara");
-        game.players[0].view.transform.Rotate(0,180,0,Space.World); yield return null;
-        Call(investigation,"UpdateShadow");
-        Require(investigation.ShadowMoving && investigation.Shadow.transform.position != shadowPosition,"sombra gatea por una ruta física cuando nadie la mira");
-        Place(game.players[0],savedPosition); game.players[0].view.transform.localRotation = savedLook;
-        Vector3 darkPosition = game.players[1].transform.position; Quaternion darkLook = game.players[1].view.transform.localRotation;
-        candle.Drop(); candle.transform.position = new Vector3(-13,.1f,30);
-        Place(game.players[1],new Vector3(-13,0,24));
-        foreach (var p in game.players) p.view.transform.rotation = Quaternion.LookRotation(Vector3.back);
-        Set(investigation,"travelBudget",0f); investigation.AdvanceShadow("La vela está abandonada."); Set(investigation,"moveAfter",game.ElapsedSeconds - 1);
-        float beforeLure = Vector3.Distance(investigation.Shadow.transform.position,candle.transform.position);
-        Call(investigation,"UpdateShadow");
-        Require(Vector3.Distance(investigation.Shadow.transform.position,candle.transform.position) < beforeLure,"sombra sigue la vela aunque un jugador oscuro esté más cerca en la dirección opuesta");
-        Place(game.players[1],darkPosition); game.players[1].view.transform.localRotation = darkLook;
-        game.players[0].view.transform.localRotation = savedLook; candle.PickUp(game.players[0]);
         investigation.enabled = false; // Isolate containment and repair rules from random navigation in this probe.
         game.ShadowContact(); Require(game.ShadowContacts == 1 && !game.Finished,"primer contacto asusta y permite continuar");
         foreach (var symbol in Enumerable.Range(0,3).Select(game.SymbolAt).ToArray()) game.Activate(game.mechanisms.First(m => m.symbol == symbol),game.players[1]);
@@ -241,7 +223,7 @@ public class DemoProductionProbe : MonoBehaviour
         Call(game,"ReturnToMenu"); yield return new WaitForSecondsRealtime(1.5f);
         game = FindAnyObjectByType<DemoGame>();
         Require(!game.Playing && game.Danger == 0 && game.CandleCharge == 1 && game.ShadowContacts == 0 && game.CompletedCount == 0 && game.Investigation.EvidenceCount == 0,"volver al menú reinicia vela, sombra, puestos, secuencia y peligro");
-        game.Begin(); yield return null; game.ShadowContact(); game.ShadowContact();
+        game.Begin(); game.SkipIntro(); yield return null; game.ShadowContact(); game.ShadowContact();
         Require(game.Finished && game.DefeatCause.Contains("sombra"),"segundo contacto pierde por sombra");
         Call(game,"Retry"); yield return new WaitForSecondsRealtime(1.5f); game = FindAnyObjectByType<DemoGame>();
         Require(game.Playing && game.ShadowContacts == 0 && game.CompletedCount == 0 && game.Danger < 1 && game.CandleCharge > .99f,"reintentar entra limpio a la expedición");

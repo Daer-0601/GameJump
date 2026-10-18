@@ -49,6 +49,7 @@ namespace Gamejam2026
         public float destabilizeMax = 52f;
         public bool Playing => started && !paused && !finished;
         public bool Finished => finished;
+        public bool Won => won;
         public bool PlayerInputEnabled => Playing && Time.frameCount > inputResumeFrame;
         public float Danger { get; private set; }
         public float Disturbance => Mathf.Clamp01((disturbanceUntil - elapsed) / 1.4f);
@@ -91,7 +92,20 @@ namespace Gamejam2026
         public bool SealsOccupied => players.Length == 2 && ((InSeal(players[0], true) && InSeal(players[1], false)) || (InSeal(players[1], true) && InSeal(players[0], false)));
         public void Notify(string message, float seconds = 5f)
         {
-            foreach (var p in players) if (p) p.Tell(message, seconds);
+            foreach (var p in players) if (p) p.Log(message, seconds);
+            CuadernoContenido.Anotar(this, message);
+        }
+
+        void PrepareNotebooks()
+        {
+            CuadernoContenido.Ensure(this);
+            foreach (var player in players)
+            {
+                if (!player || player.Notebook) continue;
+                var notebook = player.gameObject.AddComponent<CuadernoVista>();
+                notebook.Bind(player, this);
+                player.Notebook = notebook;
+            }
         }
         public void RestoreCandle()
         {
@@ -259,6 +273,9 @@ namespace Gamejam2026
         bool finished;
         bool won;
         bool transitioning;
+        bool introducing;
+        float introStart;
+        const float IntroDuration = 5.4f;
         int inputResumeFrame;
         float elapsed;
         float nextDisturbance;
@@ -317,6 +334,8 @@ namespace Gamejam2026
         GUIStyle smallStyle;
         GUIStyle hudStyle;
         GUIStyle hudSmallStyle;
+        GUIStyle whisperStyle;
+        GUIStyle cueStyle;
         bool stylesReady;
         Font serif;
         Texture2D grain;
@@ -383,6 +402,7 @@ namespace Gamejam2026
             atmosphere.Initialize(this);
             Investigation = gameObject.AddComponent<RecintoInvestigation>();
             Investigation.Initialize(this);
+            PrepareNotebooks();
             ResetLearningTips();
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -403,8 +423,18 @@ namespace Gamejam2026
             name2 = CleanName(name2, "Jugador 2");
             SaveNames();
             StopEdit(false);
+            introducing = true;
+            introStart = Time.unscaledTime;
+            LockPointer();
+        }
+
+        public void SkipIntro()
+        {
+            if (!introducing) return;
+            introducing = false;
             started = true;
             inputResumeFrame = Time.frameCount;
+            CuadernoContenido.Anotar(this, "Turno de noche. " + PlayerLabel(0) + " lleva la vela y " + PlayerLabel(1) + " la manivela. Lo que pase queda apuntado aquí.");
             LockPointer();
         }
 
@@ -420,6 +450,14 @@ namespace Gamejam2026
             BindTextKeyboard();
             ExecuteCommand();
             if (!this) return;
+
+            if (introducing)
+            {
+                Keyboard keyboard = Keyboard.current;
+                bool skip = keyboard != null && (keyboard.spaceKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame || keyboard.numpadEnterKey.wasPressedThisFrame);
+                if (skip || SouthDown() || Time.unscaledTime - introStart >= IntroDuration) SkipIntro();
+                return;
+            }
 
             RefreshOverlay();
             if (overlay >= 0) PollMenu();
@@ -528,6 +566,7 @@ namespace Gamejam2026
             string note = mechanism.symbol + " completado. " + completed + "/3";
             if (completed == order.Length && AnyUnstable()) note = "Secuencia lista. Falta estabilizar un mecanismo.";
             foreach (var teammate in players) teammate.Tell(note);
+            CuadernoContenido.Anotar(this, note);
             TryWin();
         }
 
@@ -539,7 +578,9 @@ namespace Gamejam2026
             PlaySfx(gearsClip);
             Pulse(mechanism.symbol + " estable", 1);
             Danger = Mathf.Max(0f, Danger - stabilizeRelief);
-            foreach (var teammate in players) teammate.Tell("¡CLONC! " + mechanism.symbol + " estabilizado. −" + stabilizeRelief.ToString("0") + "% peligro.");
+            string steady = "¡CLONC! " + mechanism.symbol + " estabilizado. −" + stabilizeRelief.ToString("0") + "% peligro.";
+            foreach (var teammate in players) teammate.Tell(steady);
+            CuadernoContenido.Anotar(this, steady);
             TryWin();
         }
 
@@ -966,6 +1007,7 @@ namespace Gamejam2026
 
         int CurrentOverlay()
         {
+            if (introducing) return -3;
             if (!started) return 0;
             if (finished) return 2;
             if (paused) return 1;
@@ -1348,6 +1390,7 @@ namespace Gamejam2026
                     else if (overlay == 0) DrawTitle();
                     else DrawSimple();
                 }
+                else if (introducing) DrawIntro(width, height);
                 else DrawHud(width, height);
             }
             finally
@@ -1355,6 +1398,22 @@ namespace Gamejam2026
                 GUI.matrix = Matrix4x4.identity;
                 GUI.color = Color.white;
             }
+        }
+
+        void DrawIntro(float width, float height)
+        {
+            float t = Mathf.Max(0f, Time.unscaledTime - introStart);
+            float fade = Mathf.Clamp01(t / 0.65f) * Mathf.Clamp01((IntroDuration - t) / 0.65f);
+            Box(new Rect(0f, 0f, width, height), new Color(0.008f, 0.008f, 0.009f, 0.96f));
+            float panel = Mathf.Min(760f, width - 56f);
+            float left = (width - panel) * 0.5f;
+            Rule(width * 0.5f, height * 0.32f, Mathf.Min(panel, 420f));
+            Label(new Rect(left, height * 0.34f, panel, 52f), "A OSCURAS", titleStyle, new Color(Paper.r, Paper.g, Paper.b, fade));
+            string line = t < 2.25f ? "La oscuridad ya entró en el recinto." : "Tres mecanismos. Un orden. Dos personas para cerrar el incidente.";
+            Label(new Rect(left, height * 0.46f, panel, 100f), line, bodyStyle, new Color(Paper.r, Paper.g, Paper.b, fade));
+            Label(new Rect(left, height * 0.65f, panel, 34f), "La partida comienza en " + Mathf.Max(1, Mathf.CeilToInt(IntroDuration - t)), captionStyle, new Color(Paper.r, Paper.g, Paper.b, fade));
+            Label(new Rect(left, height * 0.72f, panel, 34f), "ESPACIO, ENTER O A PARA ENTRAR", captionStyle, new Color(Paper.r, Paper.g, Paper.b, fade));
+            Box(new Rect(left, height * 0.79f, panel * Mathf.Clamp01(t / IntroDuration), 2f), new Color(Paper.r, Paper.g, Paper.b, fade));
         }
 
         void LayoutOverlay(float width, float height)
@@ -1423,8 +1482,8 @@ namespace Gamejam2026
                 hits[i] = visuals[i] = new Rect(x, y, columnW, 48f);
                 y += 56f;
             }
-            statusRect = new Rect(x, y + 4f, columnW, 36f);
-            helpRect = new Rect(x, y + 42f, columnW, 110f);
+            statusRect = new Rect(x, y + 4f, columnW, 52f);
+            helpRect = new Rect(x, y + 60f, columnW, 96f);
         }
 
         void HandlePointer()
@@ -1605,7 +1664,7 @@ namespace Gamejam2026
                 DrawChoice(hits[1], "OPCIONES", 1, false, false, false);
                 DrawChoice(hits[2], "VOLVER AL MENÚ", 2, false, false, false);
                 DrawChoice(hits[3], "SALIR", 3, false, false, false);
-                Label(statusRect, "La partida sigue detenida.", smallStyle, Ash);
+                Label(statusRect, PauseNumbers(), smallStyle, Ash);
             }
             else
             {
@@ -1710,84 +1769,80 @@ namespace Gamejam2026
                 if (!player) continue;
                 float left = i * width * 0.5f;
                 float half = width * 0.5f;
-                float x = left + 16f;
-                float panelWidth = half - 32f;
-                float top = 12f;
-                bool threatVisible = elapsed < threatUntil && !string.IsNullOrEmpty(threatText);
-                string held = player.Held ? player.Held.displayName : "manos libres";
-                string identity = "J" + (player.playerIndex + 1) + "  " + PlayerLabel(i) + "  /  " + held;
-                top += DrawHudPanel(x, top, panelWidth, identity + "\n" + ImmediateObjective(), hudStyle, Paper);
+                bool reading = player.Reading;
 
-                if (threatVisible)
-                    top += DrawHudPanel(x, top, panelWidth, "AMENAZA: " + threatText, hudStyle, Accent);
-
-                string marks = Investigation ? "Marcas " + Investigation.EvidenceSummary
-                    + " | Consola " + (Investigation.Contrasted ? "verificada" : "pendiente") : "Marcas sin descubrir";
-                string resources = "Peligro " + Danger.ToString("0") + "% (" + DangerWords + ") | Sellos " + completed + "/3"
-                    + " | Vela " + CandleRange.ToString("0.0") + " m"
-                    + (CandleCharge <= 0 ? " (luz mínima)" : CandleCharge < 0.5f ? " (chisporrotea)" : "");
-                string summary = marks + "\n" + resources;
-                if (Investigation)
+                if (Containing && !reading)
                 {
-                    string circuit = Investigation.RequiredPower == 0 ? "opcional"
-                        : Mathf.Min(Investigation.SurveyedPower, Investigation.RequiredPower) + "/" + Investigation.RequiredPower;
-                    summary += "\nRed " + circuit + " | " + Investigation.LightSummary;
-                }
-                top += DrawHudPanel(x, top, panelWidth, summary, hudSmallStyle, Ash);
-
-                if (Containing)
-                {
-                    string status = ContainmentStatusText(out bool advancing);
-                    string containment = "CONTENCIÓN " + Mathf.RoundToInt(Containment01 * 100f) + "%\n"
-                        + WorkshopOccupancyString() + " | " + PumpOccupancyString() + "\n" + status;
-                    top += DrawHudPanel(x, top, panelWidth, containment, hudSmallStyle, advancing ? Paper : Accent, Containment01);
+                    ContainmentStatusText(out bool advancing);
+                    var bar = new Rect(left + half * 0.3f, 22f, half * 0.4f, 3f);
+                    Box(bar, new Color(0f, 0f, 0f, 0.55f));
+                    Box(new Rect(bar.x, bar.y, bar.width * Containment01, bar.height), advancing ? new Color(Paper.r, Paper.g, Paper.b, 0.75f) : Accent);
                 }
 
                 if (elapsed < contactFlashUntil) Box(new Rect(left, 0, half, height), new Color(.55f, .49f, .38f, .09f));
-                float centerX = left + half * 0.5f;
-                float centerY = height * 0.5f;
-                Box(new Rect(centerX - 7f, centerY - 0.5f, 14f, 1f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
-                Box(new Rect(centerX - 0.5f, centerY - 7f, 1f, 14f), new Color(Paper.r, Paper.g, Paper.b, 0.8f));
-
-                float bottom = height - 16f;
-                string prompt = player.Hint;
-                if (!string.IsNullOrEmpty(player.DropHint))
-                    prompt = string.IsNullOrEmpty(prompt) ? player.DropHint : prompt + "\n" + player.DropHint;
-                if (!string.IsNullOrEmpty(prompt))
-                    DrawHudBottomPanel(x, ref bottom, panelWidth, prompt, hudStyle, Paper);
-
-                var focus = player.FocusedMechanism;
-                if (focus && focus.unstable)
-                {
-                    string state = player.Stabilizing ? "ESTABILIZANDO" : "DESAJUSTADO";
-                    string repair = focus.symbol + " " + state + " " + Mathf.RoundToInt(focus.Hold01 * 100f) + "%"
-                        + " | [" + DemoPlayerInput.UseLabel(player.playerIndex) + "] mantener sin manivela";
-                    DrawHudBottomPanel(x, ref bottom, panelWidth, repair, hudSmallStyle, Accent, focus.Hold01);
-                }
-                else if (focus && !focus.done && focus.HasCrank && focus.Cooperation01 > 0f)
-                {
-                    string cooperation = focus.symbol + " ACTIVACIÓN CONJUNTA " + Mathf.RoundToInt(focus.Cooperation01 * 100f) + "%";
-                    DrawHudBottomPanel(x, ref bottom, panelWidth, cooperation, hudSmallStyle, Paper, focus.Cooperation01);
-                }
-
-                if (Time.time < pulseUntil && !string.IsNullOrEmpty(pulseText))
-                    DrawHudBottomPanel(x, ref bottom, panelWidth, pulseText, hudStyle, pulsePriority >= 3 ? Accent : Paper);
-
-                if (Time.unscaledTime < player.MessageUntil && !string.IsNullOrEmpty(player.Message)
-                    && (!threatVisible || player.Message != threatText))
-                    DrawHudBottomPanel(x, ref bottom, panelWidth, player.Message, hudSmallStyle, Ash);
-
-                string tip = GetPlayerTip(i);
-                if (!string.IsNullOrEmpty(tip)
-                    && bottom - HudPanelHeight(tip, panelWidth, hudSmallStyle) >= Mathf.Max(top + 12f, centerY + 36f))
-                    DrawHudBottomPanel(x, ref bottom, panelWidth, tip, hudSmallStyle, new Color(0.86f, 0.72f, 0.40f));
+                if (!reading) DrawReticle(player, left + half * 0.5f, height * 0.5f);
+                DrawWhisper(player, left, half, height);
+                DrawNotebookCue(player, left, half, height, reading);
             }
+        }
+
+        void DrawReticle(DemoPlayer player, float x, float y)
+        {
+            var ink = new Color(Paper.r, Paper.g, Paper.b, player.HasFocus ? 0.9f : 0.42f);
+            Box(new Rect(x - 1.5f, y - 1.5f, 3f, 3f), ink);
+            if (!player.HasFocus) return;
+            const float radius = 11f;
+            for (int k = 0; k < 4; k++)
+            {
+                float angle = k * Mathf.PI * 0.5f + Mathf.PI * 0.25f;
+                Box(new Rect(x + Mathf.Cos(angle) * radius - 1.5f, y + Mathf.Sin(angle) * radius - 1.5f, 3f, 3f), ink);
+            }
+            if (player.FocusProgress < 0f) return;
+            const int dots = 28;
+            int lit = Mathf.RoundToInt(Mathf.Clamp01(player.FocusProgress) * dots);
+            for (int k = 0; k < dots; k++)
+            {
+                float angle = -Mathf.PI * 0.5f + k / (float)dots * Mathf.PI * 2f;
+                var color = k < lit ? new Color(0.86f, 0.62f, 0.32f, 0.95f) : new Color(0f, 0f, 0f, 0.45f);
+                Box(new Rect(x + Mathf.Cos(angle) * 17f - 1.5f, y + Mathf.Sin(angle) * 17f - 1.5f, 3f, 3f), color);
+            }
+        }
+
+        void DrawWhisper(DemoPlayer player, float left, float half, float height)
+        {
+            float remaining = player.WhisperUntil - Time.unscaledTime;
+            if (remaining <= 0f || string.IsNullOrEmpty(player.Whisper)) return;
+            float alpha = Mathf.Clamp01(remaining / 0.6f) * 0.92f;
+            var rect = new Rect(left + half * 0.12f, height * 0.74f, half * 0.76f, height * 0.12f);
+            Label(new Rect(rect.x + 1.5f, rect.y + 1.5f, rect.width, rect.height), player.Whisper, whisperStyle, new Color(0f, 0f, 0f, alpha * 0.85f));
+            Label(rect, player.Whisper, whisperStyle, new Color(0.88f, 0.84f, 0.74f, alpha));
+        }
+
+        void DrawNotebookCue(DemoPlayer player, float left, float half, float height, bool reading)
+        {
+            if (!player.Notebook) return;
+            string key = reading ? DemoPlayerInput.PageLabel(player.playerIndex) + " hojas    " + DemoPlayerInput.NotebookLabel(player.playerIndex) + " cerrar"
+                : player.Notebook.Unread ? "nota nueva en el cuaderno  [" + DemoPlayerInput.NotebookLabel(player.playerIndex) + "]"
+                : elapsed < 16f ? "cuaderno  [" + DemoPlayerInput.NotebookLabel(player.playerIndex) + "]" : null;
+            if (key == null) return;
+            float pulse = reading ? 0.55f : player.Notebook.Unread ? 0.55f + Mathf.Sin(Time.unscaledTime * 3.2f) * 0.25f : 0.5f;
+            var rect = new Rect(left + 22f, height - 46f, half - 44f, 32f);
+            Label(new Rect(rect.x + 1f, rect.y + 1f, rect.width, rect.height), key, cueStyle, new Color(0f, 0f, 0f, pulse));
+            Label(rect, key, cueStyle, new Color(0.84f, 0.8f, 0.7f, pulse));
         }
 
         string PauseBody()
         {
             string who = "Expedición de " + PlayerLabel(0) + " y " + PlayerLabel(1) + ".";
             return who + "\nLa expedición está detenida.";
+        }
+
+        string PauseNumbers()
+        {
+            string line = "Peligro " + Danger.ToString("0") + "% (" + DangerWords + ")   Sellos " + completed + "/3   Vela " + CandleRange.ToString("0.0") + " m";
+            if (Investigation && !string.IsNullOrEmpty(Investigation.LightSummary))
+                line += "\n" + Investigation.LightSummary;
+            return line;
         }
 
         string ResultBody()
@@ -1886,6 +1941,14 @@ namespace Gamejam2026
             smallStyle = Style(14, FontStyle.Normal, TextAnchor.UpperLeft, true);
             hudStyle = Style(18, FontStyle.Normal, TextAnchor.MiddleLeft, true);
             hudSmallStyle = Style(18, FontStyle.Normal, TextAnchor.MiddleLeft, true);
+            var handwriting = Resources.Load<Font>("Cuaderno/Fuentes/Kalam-Regular");
+            whisperStyle = Style(25, FontStyle.Normal, TextAnchor.UpperCenter, true);
+            cueStyle = Style(20, FontStyle.Normal, TextAnchor.MiddleLeft, false);
+            if (handwriting)
+            {
+                whisperStyle.font = handwriting;
+                cueStyle.font = handwriting;
+            }
             stylesReady = true;
         }
 

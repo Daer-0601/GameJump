@@ -1,0 +1,4 @@
+Quaternius Universal Animation Library (Standard)
+Source: https://quaternius.com/packs/universalanimationlibrary.html
+License: CC0 1.0 Universal, https://creativecommons.org/publicdomain/zero/1.0/
+The original Unity FBX is included. Only a gameplay subset is connected to the two characters.

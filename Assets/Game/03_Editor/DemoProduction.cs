@@ -30,6 +30,8 @@ public static class DemoProduction
             else if (command == "refresh") AssetDatabase.Refresh();
             else if (command == "art") ApplyArt();
             else if (command == "materials") PolishMaterials();
+            else if (command == "characters") Gamejam2026.Editor.FinalCharacterIntegration.Run();
+            else if (command == "third-person") { PlayerPrefs.SetInt("AOscuras.Camera", 0); PlayerPrefs.Save(); }
             else if (command == "restore-settings") PlayerSettings.runInBackground = false;
             else if (command == "check") DemoProductionCheck.Run();
             else if (command == "build") BuildWindows();
@@ -44,7 +46,11 @@ public static class DemoProduction
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode || SceneManager.GetActiveScene().isDirty) throw new InvalidOperationException("Materiales: la escena debe estar guardada y fuera de Play.");
         var game = UnityEngine.Object.FindAnyObjectByType<DemoGame>();
-        foreach (var mechanism in game.mechanisms) ConvertMaterials(mechanism.transform.Find("Carcasa industrial importada").gameObject);
+        foreach (var mechanism in game.mechanisms)
+        {
+            var pipes = mechanism.transform.Find("Tuberias del soporte");
+            if (pipes) ConvertMaterials(pipes.gameObject);
+        }
         Flame(game.candles[0]);
         for (int i = 0; i < game.players.Length; i++)
         {
@@ -68,7 +74,7 @@ public static class DemoProduction
     }
     static void InspectModels()
     {
-        var paths = AssetDatabase.FindAssets("t:Model", new[] { "Assets/External/QuaterniusWorkers", "Assets/External/RecintoSpider" });
+        var paths = AssetDatabase.FindAssets("t:Model", new[] { "Assets/External/QuaterniusWorkers" });
         File.WriteAllText("Temp/Production.models", string.Join("\n", paths.Select(AssetDatabase.GUIDToAssetPath).Select(p => p + "\n" +
             string.Join("\n", AssetDatabase.LoadAllAssetsAtPath(p).OfType<AnimationClip>().Select(c => c.name + " " + c.length)) + "\n" +
             string.Join("\n", AssetDatabase.LoadAssetAtPath<GameObject>(p).GetComponentsInChildren<Transform>().Select(t => t.name)))));
@@ -100,10 +106,10 @@ public static class DemoProduction
         foreach (var mechanism in game.mechanisms)
         {
             Machine(mechanism);
-            ConvertMaterials(mechanism.transform.Find("Carcasa industrial importada").gameObject);
+            var pipes = mechanism.transform.Find("Tuberias del soporte");
+            if (pipes) ConvertMaterials(pipes.gameObject);
         }
         BuildStation();
-        BuildSpider();
         var slam = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/External/AudioFinal/MetalWood/metal_slam_01.ogg");
         foreach (var passage in UnityEngine.Object.FindObjectsByType<DemoPassage>()) { passage.openingClip = slam; passage.openingSeconds = 1.5f; EditorUtility.SetDirty(passage); }
         EditorUtility.SetDirty(game);
@@ -404,12 +410,15 @@ public static class DemoProduction
     }
     static void Machine(DemoMechanism mechanism)
     {
-        if (mechanism.transform.Find("Carcasa industrial importada")) return;
-        var mesh = Model("Assets/External/Plumbing/Circuit Breaker.fbx", mechanism.transform, "Carcasa industrial importada", 1.45f);
-        mesh.transform.localPosition += Vector3.up * .05f;
-        // Keep existing wheel, socket, collider and label references.
-        foreach (var r in mechanism.GetComponentsInChildren<Renderer>())
-            if (!r.transform.IsChildOf(mesh.transform) && r.transform != mechanism.wheel && !r.GetComponent<TextMesh>() && !r.transform.IsChildOf(mechanism.wheel)) r.enabled = false;
+        if (mechanism.transform.Find("Tuberias del soporte")) return;
+        var cascara = mechanism.transform.Find("Carcasa industrial importada");
+        if (cascara) cascara.gameObject.SetActive(false);
+        var bloque = mechanism.transform.Find("Base interactuable");
+        if (bloque)
+        {
+            var mesh = bloque.GetComponent<MeshRenderer>();
+            if (mesh) mesh.enabled = false;
+        }
     }
     static void BuildStation()
     {
@@ -417,27 +426,6 @@ public static class DemoProduction
         Model("Assets/External/Plumbing/Circuit Breaker.fbx", root.transform, "Carcasa", 1.45f);
         Directory.CreateDirectory(Art + "/Resources/Production");
         PrefabUtility.SaveAsPrefabAsset(root, Art + "/Resources/Production/Station.prefab");
-        UnityEngine.Object.DestroyImmediate(root);
-    }
-    static void BuildSpider()
-    {
-        const string path = "Assets/External/RecintoSpider/Spider.fbx";
-        ImportRig(path);
-        var root = new GameObject("Sombra que gatea");
-        var model = Model(path, root.transform, "Criatura con rig", .48f);
-        var texture = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/External/RecintoSpider/Spider.png");
-        var skin = Material("Piel mojada de la sombra", new Color(.24f,.28f,.22f), .12f); skin.SetTexture("_BaseMap", texture);
-        foreach (var r in model.GetComponentsInChildren<Renderer>()) r.sharedMaterial = skin;
-        var animator = model.GetComponent<Animator>(); if (!animator) animator = model.AddComponent<Animator>();
-        string controllerPath = Art + "/Sombra.controller";
-        var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
-        if (!controller) controller = AnimatorController.CreateAnimatorControllerAtPath(controllerPath);
-        var machine = controller.layers[0].stateMachine;
-        foreach (var state in machine.states) machine.RemoveState(state.state);
-        var crawl = machine.AddState("Crawl"); crawl.motion = Clip(path, "walk"); machine.defaultState = crawl;
-        var idle = machine.AddState("Idle"); idle.motion = Clip(path, "idle");
-        animator.runtimeAnimatorController = controller; animator.applyRootMotion = false;
-        PrefabUtility.SaveAsPrefabAsset(root, Art + "/Resources/Production/Shadow.prefab");
         UnityEngine.Object.DestroyImmediate(root);
     }
 }

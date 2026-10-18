@@ -119,6 +119,7 @@ public class DaerPlayProbe : MonoBehaviour
             passage.onOpening.AddListener(() => openings++);
             game.RoundFinished += success => { finishes++; won = success; };
             game.Begin();
+            game.SkipIntro();
             yield return null;
             foreach (var player in game.players) player.enabled = false;
             Require(game.Playing && game.players.Length == 2 && game.players[0].Held.isCandle && !game.players[1].Held.isCandle, "inicio sin mando, vela y manivela: " + string.Join("", order));
@@ -239,6 +240,7 @@ public class DaerPlayProbe : MonoBehaviour
         var lossGame = FindAnyObjectByType<DemoGame>();
         FindAnyObjectByType<DaerPlaytestRecorder>().recordRounds = false;
         lossGame.Begin();
+        lossGame.SkipIntro();
         yield return null;
         foreach (var player in lossGame.players) player.enabled = false;
         bool lost = false;

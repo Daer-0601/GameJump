@@ -77,6 +77,7 @@ public class JamRecoveryProbe : MonoBehaviour
         var game = FindAnyObjectByType<DemoGame>();
         FindAnyObjectByType<DaerPlaytestRecorder>().recordRounds = false;
         game.Begin();
+        game.SkipIntro();
         yield return null;
         foreach (var player in game.players) player.enabled = false;
         Require(game.Playing, "partida iniciada con teclado y sin mando");

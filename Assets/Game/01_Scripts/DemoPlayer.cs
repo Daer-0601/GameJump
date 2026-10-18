@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Serialization;
 
 namespace Gamejam2026
@@ -14,11 +15,11 @@ namespace Gamejam2026
         [Min(1f)] public float runMultiplier = 1.75f;
         [Tooltip("Multiplicador de velocidad al llevar la manivela, tanto al caminar como al correr.")]
         [Range(0.1f, 1f)] public float crankSpeedMultiplier = 0.65f;
-        [Min(0f)] public float mouseSensitivity = 0.11f;
+        [Min(0f)] public float mouseSensitivity = 0.16f;
         [FormerlySerializedAs("stickSensitivity")]
-        [Min(0f)] public float keyboardLookSpeed = 115f;
-        [Tooltip("Tiempo para alcanzar la velocidad de giro de J2. Cero desactiva la rampa.")]
-        [Min(0f)] public float keyboardLookRampTime = 0.12f;
+        [Min(0f)] public float keyboardLookSpeed = 150f;
+        [Tooltip("Segundos para acelerar y frenar la vista de mouse y teclado, como un stick. Cero la deja instantánea.")]
+        [Min(0f)] public float keyboardLookRampTime = 0.2f;
         [Range(0.1f, 1f)] public float preciseLookMultiplier = 0.35f;
         public float reach = 2.6f;
         public CarryObject Held { get; set; }
@@ -33,6 +34,13 @@ namespace Gamejam2026
         public DemoMechanism Stabilizing { get; private set; }
         public DemoMechanism FocusedMechanism { get; private set; }
         public bool Working { get; private set; }
+        public string Whisper { get; private set; }
+        public float WhisperUntil { get; private set; }
+        // Algo interactuable bajo la mira y avance de la acción mantenida (-1 si no hay).
+        public bool HasFocus { get; private set; }
+        public float FocusProgress { get; private set; } = -1f;
+        public CuadernoVista Notebook { get; set; }
+        public bool Reading => Notebook && Notebook.Blocking;
         public float ActualSpeed => controller ? Vector3.ProjectOnPlane(controller.velocity, Vector3.up).magnitude : 0f;
         [Range(0f, 0.03f)] public float shakeAtFullDanger = 0.01f;
         [Range(0f, 0.04f)] public float shakeAtCritical = 0.018f;
@@ -45,6 +53,7 @@ namespace Gamejam2026
         bool bodyHidden;
         float viewBlend;
         bool firstPerson;
+        Renderer[] bodyRenderers;
         const float EyeForward = 0.16f;
         const float EyeLift = 0.05f;
         static readonly Vector3 EyeFallback = new Vector3(0f, 1.62f, 0.16f);
@@ -58,8 +67,15 @@ namespace Gamejam2026
         float crankHold;
         bool crankHeld;
         DemoMechanism crankTarget;
-        Vector2 lookVelocity;
+        Vector2 lookRate;
+        Vector2 lookRateVelocity;
+        Vector2 bodyMove;
+        float lean;
+        float leanVelocity;
+        float bobPhase;
+        float yawRate;
         const float FootstepInterval = 0.42f;
+        const float MaxLookRate = 280f;
         public void ConfigureCamera(Vector3 position)
         {
             thirdRest = position;
@@ -87,8 +103,12 @@ namespace Gamejam2026
             footstepsSource = gameObject.AddComponent<AudioSource>();
             footstepsSource.playOnAwake = false;
             footstepsSource.spatialBlend = 0f;
-            head = FindNamed(transform, "Head");
+            var motion = GetComponent<DemoMotion>();
+            head = motion && motion.visual ? FindNamed(motion.visual, "Head") : null;
+            if (!head) head = FindNamed(transform, "Head");
             CacheBody();
+            if (motion && motion.visual)
+                bodyRenderers = motion.visual.GetComponentsInChildren<Renderer>(true);
             if (view)
             {
                 thirdRest = view.transform.localPosition;
@@ -97,9 +117,37 @@ namespace Gamejam2026
             }
         }
 
+        void OnEnable()
+        {
+            RenderPipelineManager.beginCameraRendering += ConcealOwnShadow;
+            RenderPipelineManager.endCameraRendering += RestoreOwnShadow;
+        }
+
         void OnDisable()
         {
             ApplyBodyHide(false);
+            RenderPipelineManager.beginCameraRendering -= ConcealOwnShadow;
+            RenderPipelineManager.endCameraRendering -= RestoreOwnShadow;
+            SetBodyShadows(true);
+        }
+
+        // En primera persona el cuerpo queda dentro de la cámara y su sombra se estampaba adelante.
+        void ConcealOwnShadow(ScriptableRenderContext context, Camera camera)
+        {
+            if (view && camera == view && bodyHidden) SetBodyShadows(false);
+        }
+
+        void RestoreOwnShadow(ScriptableRenderContext context, Camera camera)
+        {
+            if (view && camera == view) SetBodyShadows(true);
+        }
+
+        void SetBodyShadows(bool cast)
+        {
+            if (bodyRenderers == null) return;
+            var mode = cast ? ShadowCastingMode.On : ShadowCastingMode.Off;
+            foreach (var renderer in bodyRenderers)
+                if (renderer) renderer.shadowCastingMode = mode;
         }
 
         void LateUpdate()
@@ -110,7 +158,11 @@ namespace Gamejam2026
             float shaped = Mathf.SmoothStep(0f, 1f, viewBlend);
             viewRest = Vector3.Lerp(thirdRest, EyeLocal(), shaped);
             ApplyBodyHide(viewBlend > 0.2f);
-            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, 0f);
+            float roll = 0f;
+            Vector3 cinematic = Vector3.zero;
+            if (game && game.Playing && shaped > 0.02f)
+                cinematic = CinematicOffset(out roll) * shaped;
+            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, roll);
 
             float amount = 0f;
             if (game && game.Playing)
@@ -128,7 +180,12 @@ namespace Gamejam2026
                     Mathf.PerlinNoise(8f + playerIndex, t * 15f) - 0.5f,
                     0f) * amount * 2f;
             }
-            Vector3 desired = transform.TransformPoint(viewRest + offset);
+            if (shaped >= 0.85f)
+            {
+                view.transform.localPosition = viewRest + offset + cinematic;
+                return;
+            }
+            Vector3 desired = transform.TransformPoint(viewRest + offset + cinematic);
             Vector3 pivot = transform.position + Vector3.up * 1.45f;
             Vector3 direction = desired - pivot;
             float distance = direction.magnitude;
@@ -146,6 +203,24 @@ namespace Gamejam2026
                 desired = pivot + direction.normalized * distance;
             }
             view.transform.position = desired;
+        }
+
+        // Desplazamiento y roll solo en la cámara. El rig no se mueve. Quieto, no hay balanceo.
+        Vector3 CinematicOffset(out float roll)
+        {
+            float dt = Time.deltaTime;
+            float speed = ActualSpeed < 0.35f ? 0f : ActualSpeed;
+            float stride = moveSpeed > 0.01f ? Mathf.Clamp01(speed / moveSpeed) : 0f;
+            float strafe = stride > 0f ? bodyMove.x : 0f;
+            lean = Mathf.SmoothDamp(lean, strafe, ref leanVelocity, 0.18f, Mathf.Infinity, dt);
+            if (stride == 0f && Mathf.Abs(lean) < 0.001f) lean = 0f;
+            bobPhase += speed * dt * 2.15f;
+            float sway = Mathf.Sin(bobPhase) * 0.034f * stride;
+            float bob = Mathf.Sin(bobPhase * 2f) * 0.014f * stride;
+            roll = stride == 0f && Mathf.Abs(lean) < 0.001f
+                ? 0f
+                : Mathf.Clamp(-lean * 3.4f - yawRate * 0.016f, -5.5f, 5.5f);
+            return new Vector3(lean * 0.085f + sway, bob, 0f);
         }
 
         Vector3 EyeLocal()
@@ -180,7 +255,7 @@ namespace Gamejam2026
         static Transform FindNamed(Transform root, string bone)
         {
             if (!root) return null;
-            if (root.name == bone) return root;
+            if (string.Equals(root.name, bone, System.StringComparison.OrdinalIgnoreCase)) return root;
             for (int i = 0; i < root.childCount; i++)
             {
                 Transform found = FindNamed(root.GetChild(i), bone);
@@ -189,7 +264,16 @@ namespace Gamejam2026
             return null;
         }
 
+        // Mensaje propio de este jugador: se ve unos segundos bajo la mira.
         public void Tell(string text, float seconds = 3f)
+        {
+            Log(text, seconds);
+            Whisper = text;
+            WhisperUntil = Time.unscaledTime + Mathf.Min(seconds, 4.5f);
+        }
+
+        // Aviso compartido: queda anotado en el cuaderno, no se dibuja en pantalla.
+        public void Log(string text, float seconds = 3f)
         {
             readingClue = null;
             Message = text;
@@ -217,7 +301,19 @@ namespace Gamejam2026
                 crankHeld = false;
                 crankHold = 0f;
                 crankTarget = null;
-                lookVelocity = Vector2.zero;
+                lookRate = Vector2.zero;
+                lookRateVelocity = Vector2.zero;
+                bodyMove = Vector2.zero;
+                yawRate = 0f;
+                HasFocus = false;
+                FocusProgress = -1f;
+                return;
+            }
+            if (Reading)
+            {
+                ClearFocus();
+                Look(Vector2.zero);
+                Move(default);
                 return;
             }
             var input = DemoPlayerInput.Read(playerIndex, keyboardLookSpeed, mouseSensitivity, Time.deltaTime, preciseLookMultiplier);
@@ -226,30 +322,42 @@ namespace Gamejam2026
             if (game.PlayerInputEnabled) Move(input);
         }
 
-        void Look(Vector2 look)
+        void ClearFocus()
         {
-            if (playerIndex == 1 && Time.deltaTime > 0f)
-            {
-                Vector2 target = look / Time.deltaTime;
-                float step = keyboardLookRampTime > 0f
-                    ? keyboardLookSpeed / keyboardLookRampTime * Time.deltaTime : float.PositiveInfinity;
-                lookVelocity.x = ApproachLook(lookVelocity.x, target.x, step);
-                lookVelocity.y = ApproachLook(lookVelocity.y, target.y, step);
-                look = lookVelocity * Time.deltaTime;
-            }
-            transform.Rotate(0f, look.x, 0f);
-            pitch = Mathf.Clamp(pitch - look.y, -35f, 60f);
-            if (!view) return;
-            float shaped = Mathf.SmoothStep(0f, 1f, viewBlend);
-            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, 0f);
+            Hint = string.Empty;
+            Working = false;
+            Stabilizing = null;
+            FocusedMechanism = null;
+            FocusedStation = null;
+            NeedsFreeHand = false;
+            HasFocus = false;
+            FocusProgress = -1f;
+            crankHeld = false;
+            crankHold = 0f;
+            crankTarget = null;
         }
 
-        static float ApproachLook(float current, float target, float step)
+        void Look(Vector2 look)
         {
-            if (target == 0f) return 0f;
-            if (Mathf.Sign(current) != Mathf.Sign(target)) current = 0f;
-            if (Mathf.Abs(current) > Mathf.Abs(target)) return target;
-            return Mathf.MoveTowards(current, target, step);
+            float dt = Time.deltaTime;
+            if (!view || dt <= 0f)
+            {
+                lookRate = Vector2.zero;
+                yawRate = 0f;
+                return;
+            }
+            Vector2 targetRate = Vector2.ClampMagnitude(look / dt, MaxLookRate);
+            lookRate = keyboardLookRampTime <= 0f
+                ? targetRate
+                : Vector2.SmoothDamp(lookRate, targetRate, ref lookRateVelocity, keyboardLookRampTime, Mathf.Infinity, dt);
+            Vector2 step = lookRate * dt;
+            transform.Rotate(0f, step.x, 0f);
+            float down = viewBlend > 0.5f ? -75f : -35f;
+            float up = viewBlend > 0.5f ? 75f : 60f;
+            pitch = Mathf.Clamp(pitch - step.y, down, up);
+            yawRate = step.x / dt;
+            float shaped = Mathf.SmoothStep(0f, 1f, viewBlend);
+            view.transform.localRotation = Quaternion.Euler(pitch + Mathf.Lerp(9f, 0f, shaped), 0f, 0f);
         }
 
         void Move(DemoPlayerInput.State input)
@@ -258,7 +366,8 @@ namespace Gamejam2026
             fallSpeed += Physics.gravity.y * Time.deltaTime;
             float speedMultiplier = input.Run && Stabilizing == null ? Mathf.Max(1f, runMultiplier) : 1f;
             if (Held != null && !Held.isCandle) speedMultiplier *= Mathf.Clamp(crankSpeedMultiplier, 0.1f, 1f);
-            Vector2 movement = Stabilizing == null && !Working ? input.Move : Vector2.zero;
+            bodyMove = Stabilizing == null && !Working ? input.Move : Vector2.zero;
+            Vector2 movement = bodyMove;
             var motion = transform.TransformDirection(new Vector3(movement.x, 0f, movement.y));
             controller.Move((motion * moveSpeed * speedMultiplier + Vector3.up * fallSpeed) * Time.deltaTime);
 
@@ -285,6 +394,8 @@ namespace Gamejam2026
             FocusedMechanism = null;
             FocusedStation = null;
             NeedsFreeHand = false;
+            HasFocus = false;
+            FocusProgress = -1f;
             bool wasCrankHeld = crankHeld;
             float wasCrankHold = crankHold;
             DemoMechanism wasCrankTarget = crankTarget;
@@ -313,19 +424,27 @@ namespace Gamejam2026
                 var clue = hit.collider.GetComponentInParent<DemoClue>();
                 if (growth != null && !growth.Consumed)
                 {
+                    HasFocus = true;
                     NeedsFreeHand = Held && !Held.isCandle;
                     Hint = growth.Hint(this);
                     Working = growth.Hold(this, useHeld);
+                    if (growth.Burn01 > 0f) FocusProgress = growth.Burn01;
+                    if (use && !(Held && Held.isCandle))
+                        Tell(Held ? "Con la vela en la mano. Suelta " + Held.displayName + " con " + DemoPlayerInput.DropLabel(playerIndex) + "."
+                            : "Hace falta la vela en la mano para quemarlo.");
                 }
                 else if (station != null)
                 {
+                    HasFocus = true;
                     FocusedStation = station;
                     NeedsFreeHand = station.Contaminated && Held && !Held.isCandle;
                     station.Interact(this, use, useHeld);
                     Working = useHeld && station.AcceptsWork;
+                    if (station.Progress01 > 0f) FocusProgress = station.Progress01;
                 }
                 else if (item != null && item.owner == null)
                 {
+                    HasFocus = true;
                     NeedsFreeHand = Held != null;
                     Hint = Held == null ? UseHint("Recoger " + item.displayName) : "Manos ocupadas: suelta el objeto primero";
                     if (use && Held == null)
@@ -333,9 +452,11 @@ namespace Gamejam2026
                         item.PickUp(this);
                         Hint = string.Empty;
                     }
+                    else if (use) Tell("Las manos están ocupadas. " + DemoPlayerInput.DropLabel(playerIndex) + " suelta " + Held.displayName + ".");
                 }
                 else if (mechanism != null)
                 {
+                    HasFocus = true;
                     FocusedMechanism = mechanism;
                     if (Held)
                     {
@@ -348,11 +469,10 @@ namespace Gamejam2026
                     {
                         if (useHeld && mechanism.done && (!Held || Held.isCandle)) { Stabilizing = mechanism; Working = true; }
                         mechanism.Hold(this, useHeld);
-                        int percent = Mathf.RoundToInt(mechanism.Hold01 * 100f);
-                        Hint = Held && !Held.isCandle ? mechanism.GetHint(this) : mechanism.unstable
-                            ? UseHint(useHeld ? "Estabilizando " + mechanism.symbol + "  " + percent + "% (sin moverse)"
-                                : "Mantener para estabilizar " + mechanism.symbol)
-                            : mechanism.GetHint(this);
+                        if (mechanism.Hold01 > 0f) FocusProgress = mechanism.Hold01;
+                        Hint = Held && !Held.isCandle ? mechanism.GetHint(this) : UseHint("Mantener para estabilizar " + mechanism.symbol);
+                        if (use && Held && !Held.isCandle)
+                            Tell("Sin la manivela en la mano. " + DemoPlayerInput.DropLabel(playerIndex) + " la deja en el suelo.");
                     }
                     else if (mechanism.IsBraceAim(hit))
                     {
@@ -362,6 +482,7 @@ namespace Gamejam2026
                             mechanism.Brace(this, true);
                             Working = true;
                         }
+                        if (mechanism.Cooperation01 > 0f) FocusProgress = mechanism.Cooperation01;
                     }
                     else if (useHeld && mechanism.CanTakeRole(this))
                     {
@@ -371,6 +492,7 @@ namespace Gamejam2026
                         mechanism.Operate(this, true);
                         Working = true;
                         Hint = mechanism.OperateHint(this);
+                        if (mechanism.Cooperation01 > 0f) FocusProgress = mechanism.Cooperation01;
                     }
                     else
                     {
@@ -385,17 +507,21 @@ namespace Gamejam2026
                 }
                 else if (clue != null)
                 {
+                    HasFocus = true;
                     bool readable = clue.CanRead(game);
-                    string action = clue.nextSymbolOnly ? "Leer siguiente símbolo" : "Leer la inscripción";
                     Hint = game.Investigation && !game.Investigation.Ready
                         ? game.Investigation.NextTask
-                        : readable ? UseHint(action) : "Acerca la vela para leer";
-                    if (clue.nextSymbolOnly && readable && string.IsNullOrEmpty(game.NextSymbol)) Hint = "No quedan símbolos pendientes";
+                        : readable ? UseHint(clue.nextSymbolOnly ? "Leer siguiente símbolo" : "Leer la inscripción") : "Acerca la vela para leer";
                     if (use && clue.TryRead(game, out string text))
                     {
                         Tell(text, 10f);
                         readingClue = clue;
+                        CuadernoContenido.PlacaLeida(game, text);
                     }
+                    else if (use)
+                        Tell(game.Investigation && !game.Investigation.Ready
+                            ? "La placa está cubierta de mugre. Primero lo del cuaderno."
+                            : "Sin la vela cerca no se distinguen las letras.");
                 }
                 break;
             }

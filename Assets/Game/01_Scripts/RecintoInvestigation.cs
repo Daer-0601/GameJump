@@ -5,9 +5,13 @@ namespace Gamejam2026
 {
     public class RecintoInvestigation : MonoBehaviour
     {
+        // Puestos contra muro, fuera de puertas y de las rutas. Yaw 0 mira a -Z (frente del panel).
         static readonly Vector3[] Sites = {
-            new Vector3(-19,0,27), new Vector3(-4,0,46), new Vector3(15,0,64), new Vector3(29,0,76),
-            new Vector3(5,0,84), new Vector3(-25,0,88.5f), new Vector3(-23,0,110), new Vector3(34,0,106) };
+            new Vector3(-25.4f, 0f, 22.8f), new Vector3(3.4f, 0f, 23.2f),
+            new Vector3(-25.4f, 0f, 38.4f), new Vector3(6.7f, 0f, 65.4f),
+            new Vector3(-24.2f, 0f, 72.7f), new Vector3(-27.35f, 0f, 81.6f),
+            new Vector3(39.3f, 0f, 107.6f), new Vector3(14.2f, 0f, 90.7f) };
+        static readonly float[] SiteYaw = { -90f, 90f, -90f, -90f, 180f, -90f, 90f, 180f };
         DemoGame game;
         readonly List<RecintoStation> stations = new List<RecintoStation>();
         readonly bool[] evidence = new bool[3];
@@ -58,6 +62,8 @@ namespace Gamejam2026
         public Material Metal => metal;
         public Material DarkLamp => darkLamp;
         public Material ActiveLamp => activeLamp;
+        public bool HasEvidence(int index) => index >= 0 && index < evidence.Length && evidence[index];
+        public string FalseMark => falseMark;
         public string DisplayedSymbol(int index) => !FalseRevealed && index == FalseIndex ? falseMark : game.SymbolAt(index);
         public string NextTask => EvidenceCount < 3 ? "Recuperen los registros que faltan (" + EvidenceCount + "/3); quemen los brotes que bloquean los paneles"
             : !synchronized ? "Contrasten los tres registros: ambos mantener E / U en la consola; uno es falso"
@@ -86,7 +92,7 @@ namespace Gamejam2026
             for (int i = 0; i < 6; i++)
             {
                 var root = new GameObject("Puesto variable"); root.transform.SetParent(transform, false); root.transform.position = Sites[slots[i]];
-                root.transform.rotation = Quaternion.Euler(0, slots[i] % 2 == 0 ? 25 : -35, 0);
+                root.transform.rotation = Quaternion.Euler(0f, SiteYaw[slots[i]], 0f);
                 var station = root.AddComponent<RecintoStation>();
                 station.Configure(this, game, i < 3 ? RecintoStation.Role.Evidence : i == 3 ? RecintoStation.Role.Synchronize : RecintoStation.Role.Power, i, i % 2 == 0);
                 stations.Add(station);
@@ -94,7 +100,7 @@ namespace Gamejam2026
             Contaminate(stations[0]); Contaminate(stations[3]);
             CreateDecay(Sites[slots[1]] + Vector3.right * 1.2f, 6, null);
             CreateDecay(Sites[slots[4]] + Vector3.left * 1.2f, 5, null);
-            AddExistingClutter(slots); CreateCoveredBodies(); CreateEldritchAnomaly(); PrepareSigns(); CreateShadow(); CreateSeals();
+            CreateCoveredBodies(); CreateEldritchAnomaly(); PrepareSigns(); CreateShadow(); CreateSeals();
             game.FirstMechanismCompleted += PassageChanged;
         }
         void PassageChanged(DemoMechanism mechanism) { Invoke(nameof(RebuildShadowPath), 1.7f); }
@@ -108,9 +114,57 @@ namespace Gamejam2026
                 Bounds room = DemoGame.SealRoom(point == DemoGame.WorkshopSeal);
                 Vector3 a = room.min - point, b = room.max - point;
                 line.sharedMaterial = activeLamp; line.SetPositions(new[] { new Vector3(a.x,0,a.z),new Vector3(b.x,0,a.z),new Vector3(b.x,0,b.z),new Vector3(a.x,0,b.z),new Vector3(a.x,0,a.z) });
-                var text = new GameObject("Placa de contención").AddComponent<TextMesh>(); text.transform.SetParent(root.transform,false); text.transform.localPosition = new Vector3(0,1.7f,2.8f); text.transform.localRotation = Quaternion.identity;
-                text.text = "CONTENCIÓN\nPERMANECER EN LA SALA"; text.characterSize = .025f; text.fontSize = 48; text.anchor = TextAnchor.MiddleCenter; text.alignment = TextAlignment.Center;
+                PlaceStayPlate(point);
             }
+        }
+
+        TextMesh PlaceStayPlate(Vector3 point)
+        {
+            Vector3 origin = point + Vector3.up * 1.55f;
+            RaycastHit chosen = default;
+            bool found = false;
+            float best = 0f;
+            foreach (var dir in new[] { Vector3.right, Vector3.left })
+            {
+                if (!Physics.Raycast(origin, dir, out var hit, 9f, ~0, QueryTriggerInteraction.Ignore)) continue;
+                if (Mathf.Abs(hit.normal.y) > 0.35f || Mathf.Abs(hit.normal.x) < 0.7f) continue;
+                if (hit.distance < 1.5f || hit.collider.bounds.size.magnitude < 3f) continue;
+                if (hit.collider.GetComponentInParent<DemoMechanism>() || hit.collider.GetComponentInParent<DemoPlayer>()) continue;
+                if (hit.distance <= best) continue;
+                best = hit.distance;
+                chosen = hit;
+                found = true;
+            }
+            if (!found) return null;
+            var root = new GameObject("Lectura permanencia");
+            root.transform.SetParent(transform, false);
+            root.transform.SetPositionAndRotation(chosen.point + chosen.normal * 0.04f, Quaternion.LookRotation(chosen.normal, Vector3.up));
+            var board = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            board.name = "Chapa de senal";
+            Destroy(board.GetComponent<Collider>());
+            board.transform.SetParent(root.transform, false);
+            board.transform.localPosition = new Vector3(0f, 0f, -0.01f);
+            board.transform.localScale = new Vector3(1.55f, 0.28f, 1f);
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            var metal = new Material(shader ? shader : Shader.Find("Standard"));
+            var rust = new Color(0.08f, 0.07f, 0.06f);
+            metal.color = rust;
+            if (metal.HasProperty("_BaseColor")) metal.SetColor("_BaseColor", rust);
+            if (metal.HasProperty("_Metallic")) metal.SetFloat("_Metallic", 0.4f);
+            if (metal.HasProperty("_Smoothness")) metal.SetFloat("_Smoothness", 0.1f);
+            board.GetComponent<Renderer>().sharedMaterial = metal;
+            var text = new GameObject("Rótulo").AddComponent<TextMesh>();
+            text.transform.SetParent(root.transform, false);
+            text.text = "PERMANECER EN LA SALA";
+            text.anchor = TextAnchor.MiddleCenter;
+            text.alignment = TextAlignment.Center;
+            text.fontSize = 48;
+            text.characterSize = 0.032f;
+            text.color = new Color(0.78f, 0.74f, 0.62f);
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font) text.font = font;
+            WorldMark.PaintFixed(text);
+            return text;
         }
         public void Contaminate(RecintoStation station)
         {
@@ -140,28 +194,9 @@ namespace Gamejam2026
         }
         void CreateShadow()
         {
-            var source = Resources.Load<GameObject>("Production/Shadow");
-            if (!source) { Debug.LogError("Falta Production/Shadow; aplica arte desde Gamejam/Producción."); return; }
-            shadow = Instantiate(source,transform); shadow.name = "Sombra - amenaza avisada";
-            shadow.transform.position = new Vector3(-13,0,27); shadowAnimator = shadow.GetComponentInChildren<Animator>();
-            var crawl = shadow.AddComponent<RecintoSound>(); crawl.game = game;
-            var crawlClip = threat && threat.Movement ? threat.Movement : Resources.Load<AudioClip>("Production/Crawl");
-            crawl.clips = new[] { crawlClip };
-            crawl.loop = true; crawl.onlyWhileShadowMoves = true; crawl.volume = .07f; crawl.radius = 16;
-            foreach (var renderer in shadow.GetComponentsInChildren<Renderer>(true))
-            {
-                if (renderer is SkinnedMeshRenderer skin) skin.updateWhenOffscreen = true;
-                if (!renderer.sharedMaterial) continue;
-                var skinMaterial = new Material(renderer.sharedMaterial);
-                skinMaterial.EnableKeyword("_EMISSION");
-                skinMaterial.SetColor("_EmissionColor", new Color(.04f, .05f, .035f));
-                renderer.sharedMaterial = skinMaterial;
-                shadowMaterials.Add(skinMaterial);
-            }
-            path = new RecintoShadowPath();
-            path.Build(); shadow.transform.position = path.Nearest(shadow.transform.position);
-            retreatPoint = shadow.transform.position;
-            nextAppearance = Mathf.Max(12f, firstAppearanceSeconds);
+            shadow = null;
+            shadowAnimator = null;
+            path = null;
         }
         void Update()
         {
@@ -203,8 +238,14 @@ namespace Gamejam2026
                 }
             }
         }
+        Vector3 eldritchBaseScale;
         void UpdateAnomaly()
         {
+            if (eldritch && eldritchBaseScale.sqrMagnitude > 0.0001f)
+            {
+                float breath = 1f + Mathf.Sin(Time.time * 0.45f) * 0.018f;
+                eldritch.transform.localScale = eldritchBaseScale * breath;
+            }
             if (!eldritch || eldritchSoundPlayed) return;
             foreach (var player in game.players)
             {
@@ -246,80 +287,9 @@ namespace Gamejam2026
             foreach (var p in game.players) if (p && (Vector3.Distance(p.transform.position,point) < distance || IsInView(p.view,point))) return false;
             return true;
         }
-        public void AdvanceShadow(string reason)
-        {
-            if (!game.Playing || !shadow) return;
-            game.WarnThreat("Algo cruza fuera de la vela. " + reason);
-            if (threat && shadow) threat.Warn(shadow.transform.position);
-            if (travelBudget <= 0) { moveAfter = game.ElapsedSeconds + 3; route.Clear(); shadowTarget = null; }
-            travelBudget = Mathf.Min(18,travelBudget + 7);
-        }
+        public void AdvanceShadow(string reason) { }
         void UpdateShadow()
         {
-            if (!shadow || path == null) return;
-            bool candleClose = false;
-            foreach (var p in game.players) if (p && HasCandleLight(p.transform.position + Vector3.up)) candleClose = true;
-            abandonedTime = candleClose ? 0 : abandonedTime + Time.deltaTime;
-            if (abandonedTime >= 7 && game.ElapsedSeconds >= nextAbandonedStep)
-            { nextAbandonedStep = game.ElapsedSeconds + 9; AdvanceShadow("La luz está lejos de ambos."); }
-            bool watched = ShadowWatched();
-            navigating = (retreating || travelBudget > 0) && game.ElapsedSeconds >= moveAfter && (!watched || retreating);
-            if (shadowAnimator)
-            {
-                shadowAnimator.speed = navigating ? 1 : 0;
-                if (navigating && !shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl")) shadowAnimator.Play("Crawl");
-            }
-            if (threat) threat.NoteMotion(navigating, shadow.transform.position);
-            if (navigating)
-            {
-                if (route.Count == 0)
-                {
-                    Vector3 target;
-                    if (retreating) target = retreatPoint;
-                    else
-                    {
-                        var nearest = game.players.OrderBy(p => Vector3.Distance(p.transform.position,shadow.transform.position)).First();
-                        var candle = game.candles.FirstOrDefault(c => c && c.isActiveAndEnabled && c.candleLight && c.candleLight.enabled);
-                        Vector3 lure = candle ? candle.candleLight.transform.position : nearest.transform.position;
-                        shadowTarget = stations.Where(s => s && !s.Contaminated).OrderBy(s => Vector3.Distance(s.transform.position,lure)).FirstOrDefault();
-                        target = Vector3.Distance(lure,shadow.transform.position) < 9 || !shadowTarget ? lure : shadowTarget.transform.position;
-                    }
-                    path.Route(shadow.transform.position,target,route);
-                }
-                if (route.Count > 0)
-                {
-                    Vector3 delta = route.Peek() - shadow.transform.position; delta.y = 0;
-                    float step = Mathf.Min(delta.magnitude,Time.deltaTime * 1.1f);
-                    if (delta.sqrMagnitude > .002f) shadow.transform.rotation = Quaternion.Slerp(shadow.transform.rotation,Quaternion.LookRotation(delta),Time.deltaTime * 5);
-                    shadow.transform.position += delta.normalized * step;
-                    if (!retreating) travelBudget = Mathf.Max(0,travelBudget-step);
-                    if (delta.magnitude < .15f) route.Dequeue();
-                    if (retreating && route.Count == 0) retreating = false;
-                }
-                else { travelBudget = 0; retreating = false; }
-                if (shadowTarget && !retreating && !shadowTarget.Contaminated && Vector3.Distance(shadow.transform.position,shadowTarget.transform.position) < 2)
-                {
-                    shadowTarget.Corrupt(); game.Notify("Metal y roce húmedo: la sombra ha corrompido " + shadowTarget.name + ". Quemen el brote.",7);
-                    Sound(game.gearsClip,shadow.transform.position,.14f); shadowTarget = null; travelBudget = 0; route.Clear();
-                }
-            }
-            bool canTouch = !retreating && game.ElapsedSeconds >= contactAfter && game.ElapsedSeconds >= moveAfter && travelBudget > 0f;
-            if (canTouch)
-            {
-                foreach (var p in game.players)
-                {
-                    if (!p || Vector3.Distance(p.transform.position,shadow.transform.position) > 1.6f || HasCandleLight(p.transform.position + Vector3.up) || watched) continue;
-                    contactAfter = game.ElapsedSeconds + 15;
-                    bool alreadyTouched = game.ShadowContacts > 0;
-                    game.ShadowContact();
-                    if (!alreadyTouched && !game.Finished && threat) threat.Contact(shadow.transform.position);
-                    retreating = !game.Finished; travelBudget = 0; route.Clear();
-                    Vector3 away = shadow.transform.position - p.transform.position; away.y = 0;
-                    retreatPoint = path.Nearest(shadow.transform.position + away.normalized * 9); moveAfter = game.ElapsedSeconds;
-                    break;
-                }
-            }
-            ConsiderAppearance();
         }
         float AppearanceGap()
         {
@@ -411,30 +381,6 @@ namespace Gamejam2026
             return material;
         }
 
-        void AddExistingClutter(List<int> slots)
-        {
-            GameObject barrel = null, pallet = null;
-            foreach (var candidate in FindObjectsByType<Transform>(FindObjectsInactive.Exclude))
-            {
-                if (!barrel && candidate.name == "Barrel") barrel = candidate.gameObject;
-                if (!pallet && candidate.name == "Pallet") pallet = candidate.gameObject;
-                if (barrel && pallet) break;
-            }
-            if (!barrel && !pallet) return;
-            for (int i = 0; i < 4; i++)
-            {
-                var source = i % 2 == 0 ? barrel : pallet;
-                if (!source) source = barrel ? barrel : pallet;
-                var prop = Instantiate(source, transform);
-                prop.name = i % 2 == 0 ? "Barril recuperado" : "Palé abandonado";
-                prop.transform.SetPositionAndRotation(Sites[slots[i + 2]] + new Vector3(i % 2 == 0 ? 1.6f : -1.6f, 0f, 1.1f), Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
-                foreach (var collider in prop.GetComponentsInChildren<Collider>()) Destroy(collider);
-                float bottom = float.MaxValue;
-                foreach (var renderer in prop.GetComponentsInChildren<Renderer>()) bottom = Mathf.Min(bottom, renderer.bounds.min.y);
-                if (bottom < float.MaxValue) prop.transform.position += Vector3.up * (0.03f - bottom);
-            }
-        }
-
         void CreateCoveredBodies()
         {
             var source = Resources.Load<GameObject>("Horror/DeadBodyCovered");
@@ -524,6 +470,7 @@ namespace Gamejam2026
             bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
             eldritch.transform.position += Vector3.up * (0.03f - bounds.min.y);
+            eldritchBaseScale = eldritch.transform.localScale;
             var glow = new GameObject("Reflejo tenue del ente");
             glow.transform.SetParent(eldritch.transform, false);
             glow.transform.localPosition = Vector3.up * 0.18f;

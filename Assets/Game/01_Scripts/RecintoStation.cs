@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 namespace Gamejam2026
 {
     public class RecintoStation : MonoBehaviour
@@ -20,6 +21,9 @@ namespace Gamejam2026
         public bool Surveyed => role == Role.Power && surveyed;
         public bool IsContrastStation => role == Role.Synchronize;
         public bool Contaminated => contamination && !contamination.Consumed;
+        public float Progress01 => complete || Contaminated ? 0f
+            : role == Role.Evidence && !holdEvidence ? taps / 3f
+            : progress / (role == Role.Evidence ? 2f : 2.5f);
         public bool AcceptsWork => !Contaminated && !complete && (role != Role.Synchronize || director.EvidenceCount == 3);
         public float SecondsLeft => IsPowerOn ? Mathf.Max(0, expires - game.ElapsedSeconds) : 0;
         public string Status => IsPowerOn ? (betrayed ? "DELATANDO" : Mathf.CeilToInt(SecondsLeft) + " s") : "apagada";
@@ -28,31 +32,138 @@ namespace Gamejam2026
             director = owner; game = session; role = selected; evidenceIndex = index; holdEvidence = hold;
             name = selected == Role.Evidence ? "Registro " + (index + 1) : selected == Role.Power ? "Luz " + (index == 4 ? "X" : "Y") : "Consola de contraste";
             lampDuration = Random.Range(45f, 70f);
-            var source = Resources.Load<GameObject>("Production/Station");
-            if (source) Instantiate(source, transform, false);
-            else Debug.LogError("Falta Production/Station. Aplica Gamejam/Producción/Aplicar arte sin reconstruir mapa.", this);
-            var target = gameObject.AddComponent<BoxCollider>(); target.center = new Vector3(0, .85f, 0); target.size = new Vector3(.95f, 1.65f, .5f);
+            BuildAssembly();
+            var target = gameObject.AddComponent<BoxCollider>();
+            if (selected == Role.Evidence) { target.center = new Vector3(0f, 0.52f, 0.05f); target.size = new Vector3(1.18f, 1.05f, 0.78f); }
+            else if (selected == Role.Power) { target.center = new Vector3(0f, 0.42f, 0f); target.size = new Vector3(0.95f, 0.85f, 0.72f); }
+            else { target.center = new Vector3(0f, 0.85f, 0.08f); target.size = new Vector3(0.9f, 1.55f, 0.55f); }
             var pilot = GameObject.CreatePrimitive(PrimitiveType.Sphere); pilot.name = "Piloto de estado"; pilot.transform.SetParent(transform, false);
-            pilot.transform.localPosition = new Vector3(.29f, 1.34f, -.28f); pilot.transform.localScale = Vector3.one * .075f;
+            if (selected == Role.Evidence) pilot.transform.localPosition = new Vector3(0.42f, 1.18f, 0.22f);
+            else if (selected == Role.Power) pilot.transform.localPosition = new Vector3(0.28f, 0.72f, -0.22f);
+            else pilot.transform.localPosition = new Vector3(0.32f, 1.28f, -0.12f);
+            pilot.transform.localScale = Vector3.one * 0.07f;
             Destroy(pilot.GetComponent<Collider>()); lamp = pilot.GetComponent<Renderer>(); lamp.sharedMaterial = owner.DarkLamp;
+            lamp.shadowCastingMode = ShadowCastingMode.Off;
             var plate = new GameObject("Placa de procedimiento"); plate.transform.SetParent(transform, false);
-            plate.transform.localPosition = new Vector3(0, 1.05f, -.28f); plate.transform.localRotation = Quaternion.identity;
+            plate.transform.localPosition = new Vector3(0, 1.05f, -0.28f); plate.transform.localRotation = Quaternion.identity;
             label = plate.AddComponent<TextMesh>(); label.anchor = TextAnchor.MiddleCenter; label.alignment = TextAlignment.Center;
             label.characterSize = .018f; label.fontSize = 48; label.color = new Color(.83f,.79f,.64f);
             UpdateLabel();
             if (selected != Role.Power) return;
-            var fixture = new GameObject("Farol de trabajo"); fixture.transform.SetParent(transform, false); fixture.transform.localPosition = new Vector3(0, 2.4f, 0);
-            for (int i = 0; i < 6; i++)
-            {
-                var rib = GameObject.CreatePrimitive(PrimitiveType.Cylinder); rib.name = "Jaula del farol"; rib.transform.SetParent(fixture.transform, false);
-                float angle = i * Mathf.PI / 3; rib.transform.localPosition = new Vector3(Mathf.Cos(angle) * .13f, 0, Mathf.Sin(angle) * .13f);
-                rib.transform.localScale = new Vector3(.014f, .19f, .014f); rib.GetComponent<Renderer>().sharedMaterial = director.Metal; Destroy(rib.GetComponent<Collider>());
-            }
-            var hood = GameObject.CreatePrimitive(PrimitiveType.Sphere); hood.name = "Reflector de metal"; hood.transform.SetParent(fixture.transform, false);
-            hood.transform.localPosition = Vector3.up * .22f; hood.transform.localScale = new Vector3(.44f,.08f,.44f);
-            hood.GetComponent<Renderer>().sharedMaterial = director.Metal; Destroy(hood.GetComponent<Collider>());
+            var fixture = new GameObject("Farol de trabajo"); fixture.transform.SetParent(transform, false);
+            fixture.transform.localPosition = new Vector3(0.02f, 0.82f, -0.22f);
             workLight = fixture.AddComponent<Light>(); workLight.type = LightType.Point; workLight.color = new Color(.8f,.9f,.78f);
             workLight.range = 8; workLight.intensity = 2.7f; workLight.enabled = false;
+        }
+        void BuildAssembly()
+        {
+            if (role == Role.Evidence) BuildRegistro();
+            else if (role == Role.Synchronize) BuildConsola();
+            else BuildLuz();
+        }
+        void BuildRegistro()
+        {
+            var cart = Kit("cart", Vector3.zero, Quaternion.identity);
+            Sit(cart, 0f);
+            var box = Kit("toolbox", new Vector3(-0.18f, 0f, 0.04f), Quaternion.Euler(0f, 18f, 0f));
+            Sit(box, 0.97f);
+            var binder = Resources.Load<GameObject>("Cuaderno/binder_closed");
+            if (binder)
+            {
+                var note = Instantiate(binder, transform);
+                note.name = "Cuaderno del registro";
+                note.transform.localPosition = new Vector3(0.26f, 0f, 0.02f);
+                note.transform.localRotation = Quaternion.Euler(0f, 22f, 0f);
+                note.transform.localScale = Vector3.one * 1.4f;
+                Strip(note);
+                var leather = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                var diff = Resources.Load<Texture2D>("Cuaderno/binder_notebook_diff_2k");
+                if (diff) leather.SetTexture("_BaseMap", diff);
+                leather.color = Color.white;
+                if (leather.HasProperty("_BaseColor")) leather.SetColor("_BaseColor", Color.white);
+                leather.SetFloat("_Smoothness", 0.2f);
+                foreach (var renderer in note.GetComponentsInChildren<Renderer>()) renderer.sharedMaterial = leather;
+                Sit(note, 0.97f);
+            }
+        }
+        void BuildConsola()
+        {
+            HangPanel();
+            var stool = Kit("stool", new Vector3(0.58f, 0f, -0.12f), Quaternion.Euler(0f, -25f, 0f));
+            Sit(stool, 0f);
+            var radio = Kit("boombox", new Vector3(-0.48f, 0f, 0.18f), Quaternion.Euler(0f, 180f, 0f));
+            Sit(radio, 0f);
+        }
+        void BuildLuz()
+        {
+            var gen = Kit("generator", new Vector3(0f, 0f, 0.04f), Quaternion.Euler(0f, 180f, 0f));
+            Sit(gen, 0f);
+            var box = Kit("toolbox", new Vector3(0.52f, 0f, 0.12f), Quaternion.Euler(0f, -12f, 0f));
+            Sit(box, 0f);
+        }
+        void HangPanel()
+        {
+            var source = Resources.Load<GameObject>("Production/Station");
+            if (!source)
+            {
+                Debug.LogError("Falta Production/Station. Aplica Gamejam/Producción/Aplicar arte sin reconstruir mapa.", this);
+                return;
+            }
+            var panel = Instantiate(source, transform, false);
+            panel.name = "Panel de muro";
+            Strip(panel);
+            panel.transform.localRotation = Quaternion.Euler(0f, -90f, 0f);
+            panel.transform.localScale = Vector3.one * 0.52f;
+            panel.transform.localPosition = Vector3.zero;
+            var bounds = BoundsOf(panel);
+            Vector3 localMax = transform.InverseTransformPoint(new Vector3(bounds.max.x, bounds.center.y, bounds.max.z));
+            Vector3 localMin = transform.InverseTransformPoint(new Vector3(bounds.min.x, bounds.min.y, bounds.min.z));
+            Vector3 localCenter = transform.InverseTransformPoint(bounds.center);
+            panel.transform.localPosition += new Vector3(-localCenter.x, 1.15f - bounds.center.y, 0.34f - localMax.z);
+            foreach (var renderer in panel.GetComponentsInChildren<Renderer>())
+            {
+                renderer.shadowCastingMode = ShadowCastingMode.On;
+                renderer.lightProbeUsage = LightProbeUsage.Off;
+            }
+        }
+        GameObject Kit(string key, Vector3 localPos, Quaternion extra)
+        {
+            var source = Resources.Load<GameObject>("Atrezzo/" + key);
+            if (!source)
+            {
+                Debug.LogWarning("Falta Resources/Atrezzo/" + key + ". Ejecuta Gamejam/Mapa definitivo/Colocar atrezzo.", this);
+                return null;
+            }
+            var obj = Instantiate(source, transform);
+            obj.name = key;
+            obj.transform.localPosition = localPos;
+            obj.transform.localRotation = extra * obj.transform.localRotation;
+            Strip(obj);
+            foreach (var renderer in obj.GetComponentsInChildren<Renderer>())
+            {
+                renderer.shadowCastingMode = key == "cart" || key == "generator" ? ShadowCastingMode.On : ShadowCastingMode.Off;
+                renderer.lightProbeUsage = LightProbeUsage.Off;
+            }
+            return obj;
+        }
+        static void Strip(GameObject obj)
+        {
+            if (!obj) return;
+            foreach (var collider in obj.GetComponentsInChildren<Collider>()) Destroy(collider);
+        }
+        static void Sit(GameObject obj, float y)
+        {
+            if (!obj) return;
+            var bounds = BoundsOf(obj);
+            obj.transform.position += Vector3.up * (y - bounds.min.y);
+        }
+        static Bounds BoundsOf(GameObject obj)
+        {
+            var renderers = obj.GetComponentsInChildren<Renderer>();
+            if (renderers.Length == 0) return new Bounds(obj.transform.position, Vector3.one * 0.1f);
+            var bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            return bounds;
         }
         void UpdateLabel()
         {

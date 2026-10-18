@@ -107,6 +107,7 @@ public class JamPlayProbe : MonoBehaviour
         InputSystem.QueueStateEvent(testKeyboard, new KeyboardState());
         InputSystem.Update();
         game.Begin();
+        game.SkipIntro();
         yield return null;
         Require(game.Playing, "inicia sin exigir mando");
         ScreenCapture.CaptureScreenshot("Temp/JamStart.png");
@@ -200,6 +201,7 @@ public class JamPlayProbe : MonoBehaviour
         yield return new WaitForSecondsRealtime(2f);
         game = FindAnyObjectByType<DemoGame>();
         game.Begin();
+        game.SkipIntro();
         yield return null;
         foreach (var p in game.players) p.enabled = false;
         Require(game.progress == 0f && game.Danger < 3f, "reinicio limpio");

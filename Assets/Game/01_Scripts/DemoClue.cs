@@ -19,13 +19,8 @@ namespace Gamejam2026
         void Update()
         {
             if (!labelRenderer || !game) return;
-            if (nextSymbolOnly)
-            {
-                bool readable = TryRead(game, out string text);
-                inscriptionLabel.text = text;
-                labelRenderer.enabled = readable;
-            }
-            else labelRenderer.enabled = CanRead(game);
+            if (nextSymbolOnly && TryRead(game, out string text)) inscriptionLabel.text = text;
+            labelRenderer.enabled = false;
         }
 
         public bool TryRead(DemoGame owner, out string text)

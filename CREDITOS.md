@@ -25,6 +25,20 @@ Los recursos externos descritos aquí se descargaron gratuitamente de las págin
 
 Adaptaciones: conversión de Blender a FBX, escala y materiales URP. Se conservan las texturas originales. Las tuberías y barricadas de los recorridos reutilizan estos mismos recursos.
 
+- **Atrezzo del recinto** (barril, tornillo de banco, radiocasete, saco de cemento, manguera, caja de herramientas, cables, tuberías, neumático, taburete, silla, generador, carro de soldar, estantería, rata, carro de herramientas, bolsa de basura, señal de suelo mojado, escoba, caja, escalera y mesa de picnic), de **Poly Haven**.
+  Fuente: https://polyhaven.com/
+  Licencia declarada: CC0 1.0 Universal.
+  Adaptaciones: exportación a FBX, materiales URP y colocación en el mapa. La estantería se escala para caber bajo los techos. La rata queda a tamaño real y se mueve con `RataSusto.cs`. Los registros, la consola y las luces reutilizan carro, generador, taburete, radio y caja de herramientas.
+
+- **Binder Notebook 2k**, de **Poly Haven**.
+  Fuente: https://polyhaven.com/a/binder_notebook
+  Licencia declarada: CC0 1.0 Universal.
+  Se usa como el cuaderno de procedimiento en mano (cuerpo, tapa y cierre) y como prop cerrado sobre los carros de registro.
+
+- **Permanent Marker**, de **Font Bureau / Google Fonts**. Licencia Apache 2.0.
+- **Kalam** y **Patrick Hand**, de **Google Fonts**. Licencia OFL (SIL Open Font License 1.1).
+  Las tres se usan solo para el texto manuscrito del cuaderno, en `Assets/Game/07_Cuaderno/Resources/Cuaderno/Fuentes`.
+
 ## Modelos propios de A Oscuras
 
 - **Trajes de mantenimiento, portavela, vela y manivela de baja poligonización.**
@@ -58,6 +72,8 @@ Estos créditos documentan los recursos externos. El código y el montaje inicia
 ## Demo de producción — 17 de octubre de 2026
 
 - **Ultimate Animated Character Pack**, **Quaternius**, **CC0 1.0**. Fuente directa del autor: https://opengameart.org/content/animated-characters-pack . Se importan únicamente `Worker_Female.fbx` y `Worker_Male.fbx` en `Assets/External/QuaterniusWorkers`. Escala a 1,7 m, materiales URP/Lit más apagados y rig genérico. Se usan Idle, Walk, Walk_Carry, PickUp y RecieveHit originales. Las variantes de carrera y sostener objetos se adaptan en el Editor desde esos clips; no se utiliza Mixamo.
+- **Universal Animation Library (Standard)**, **Quaternius**, **CC0 1.0**. https://quaternius.com/packs/universalanimationlibrary.html . Se incluye el FBX para Unity en `Assets/External/UniversalAnimationLibrary`. Los personajes finales usan sus clips de reposo, caminar, correr, agacharse, interacción, antorcha y golpe mediante retargeting Humanoid. La carpeta `Adapted` conserva una adaptación anterior al rig genérico de los operarios, que ya no es la presentación visible.
+- **Personajes finales J1 male y J2 secretaria**. `male_casual.fbx`, `female_secretary.fbx` y sus texturas se reutilizan desde el proyecto local `D:\gamejamV2\Assets\Resources\Players`. Sus avatares se importan como Humanoid y usan la Universal Animation Library; los operarios anteriores quedan desactivados en la escena como respaldo.
 - **Modular Dungeon**, **Quaternius**, **CC0 1.0**. https://opengameart.org/content/lowpoly-modular-dungeon . Únicamente `Candle.fbx` en `Assets/External/QuaterniusDungeon`; escala y materiales URP. La llama se sustituye por una pequeña malla de 8 cm creada en el Editor y animada según la carga; esta geometría procedural original (`Llama.asset`) se dedica a CC0 y no proviene de un generador de modelos.
 - **Spider**, **br-n518**, **CC0 1.0**. https://opengameart.org/node/86785 . `Assets/External/RecintoSpider`: conversión del `.blend` original a FBX con Blender 3.6.23, preservando rig y clips WALK, IDLE y ATTACK, textura original de 256 × 256, escala y material URP/Lit húmedo y oscuro. Se usa WALK para el desplazamiento. Creeping Shadow y sus créditos se conservan como recurso anterior; no se fabrican animaciones para su esqueleto.
 - **Fire Crackling**, **AntumDeluge**, **CC0 1.0**. https://opengameart.org/content/fire-crackling/ . Original `fire-1_0.ogg`, renombrado `Burn.ogg` en `Assets/External/AntumFire`; se reutiliza a volumen bajo para llama y consumo del brote.
