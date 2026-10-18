@@ -14,7 +14,12 @@ namespace Gamejam2026
         {
             if (!candle) candle = GetComponent<CarryObject>();
             game = FindAnyObjectByType<DemoGame>();
-            if (flame) { origin = flame.localPosition; scale = flame.localScale; }
+            if (flame)
+            {
+                origin = flame.localPosition;
+                scale = flame.localScale;
+                RecintoSpecialEffects.AttachCandleEmbers(flame);
+            }
         }
 
         void Update()

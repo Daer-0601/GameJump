@@ -13,10 +13,70 @@ namespace Gamejam2026
         public Material tallerPlate;
         public Material bombasPlate;
 
-        void Awake()
+        public struct RoomZone
         {
-            if (!GetComponent<DemoMarks>()) gameObject.AddComponent<DemoMarks>();
+            public int id;
+            public string name;
+            public string title;
+            public string subtitle;
+            public Bounds bounds;
+            public Color vignetteColor;
+            public float vignetteIntensity;
         }
+
+        readonly RoomZone[] zones = new[]
+        {
+            new RoomZone
+            {
+                id = 0,
+                name = "ENTRADA",
+                title = "ACCESO 01",
+                subtitle = "GARITA Y UMBRAL AL RECINTO",
+                bounds = new Bounds(new Vector3(0f, 2.5f, 3.5f), new Vector3(40f, 7f, 28f)),
+                vignetteColor = new Color(0.04f, 0.035f, 0.03f),
+                vignetteIntensity = 0.36f
+            },
+            new RoomZone
+            {
+                id = 1,
+                name = "DEPOSITO",
+                title = "ALMACÉN 02",
+                subtitle = "DEPÓSITO DE CARGA Y SUMINISTROS",
+                bounds = new Bounds(new Vector3(-11f, 2.5f, 32f), new Vector3(34f, 7f, 32f)),
+                vignetteColor = new Color(0.08f, 0.045f, 0.025f),
+                vignetteIntensity = 0.44f
+            },
+            new RoomZone
+            {
+                id = 2,
+                name = "PATIO",
+                title = "PATIO 03",
+                subtitle = "ZONA EXPUESTA A LA PENUMBRA",
+                bounds = new Bounds(new Vector3(18f, 2.5f, 71f), new Vector3(28f, 7f, 24f)),
+                vignetteColor = new Color(0.02f, 0.035f, 0.055f),
+                vignetteIntensity = 0.42f
+            },
+            new RoomZone
+            {
+                id = 3,
+                name = "TALLER",
+                title = "TALLER 04",
+                subtitle = "MAQUINARIA PRINCIPAL Y PRENSAS",
+                bounds = new Bounds(new Vector3(-11f, 2.5f, 92f), new Vector3(38f, 7f, 44f)),
+                vignetteColor = new Color(0.10f, 0.04f, 0.02f),
+                vignetteIntensity = 0.48f
+            },
+            new RoomZone
+            {
+                id = 4,
+                name = "BOMBAS",
+                title = "BOMBAS 05",
+                subtitle = "RED DE BOMBEO Y PRESIÓN DE VAPOR",
+                bounds = new Bounds(new Vector3(26f, 2.5f, 100f), new Vector3(32f, 7f, 36f)),
+                vignetteColor = new Color(0.02f, 0.06f, 0.05f),
+                vignetteIntensity = 0.52f
+            }
+        };
 
         static readonly Vector3 Workshop = new Vector3(-20f, 0f, 105f);
         static readonly Vector3 Pumps = new Vector3(34f, 0f, 109f);
@@ -27,12 +87,28 @@ namespace Gamejam2026
         readonly List<Transform> drips = new List<Transform>();
         readonly List<Transform> valves = new List<Transform>();
         readonly List<VolumeProfile> roomProfiles = new List<VolumeProfile>();
+        readonly int[] playerZone = { -1, -1 };
+        readonly bool[] visited = new bool[5];
         float candleDimUntil;
+        float candleDraftUntil;
+        AudioSource roomAudioSource;
+        AudioClip windClip;
+        AudioClip creakClip;
+
         struct Lurker
         {
             public Transform Body;
             public Quaternion Rest;
             public float Stir;
+        }
+
+        void Awake()
+        {
+            if (!GetComponent<DemoMarks>()) gameObject.AddComponent<DemoMarks>();
+            roomAudioSource = gameObject.AddComponent<AudioSource>();
+            roomAudioSource.playOnAwake = false;
+            roomAudioSource.spatialBlend = 0f;
+            windClip = Resources.Load<AudioClip>("Production/Crawl");
         }
 
         IEnumerator Start()
@@ -47,11 +123,19 @@ namespace Gamejam2026
             PlaceLurkers();
             DressWorkshop();
             DressPumps();
-            RoomPressure(Workshop, new Color(0.09f, 0.03f, 0.015f), 0.46f);
-            RoomPressure(Pumps, new Color(0.01f, 0.04f, 0.035f), 0.5f);
-            RoomTone(Workshop, 9f);
-            RoomTone(Pumps, 9f);
+
+            for (int i = 0; i < zones.Length; i++)
+            {
+                var z = zones[i];
+                RoomPressure(z.bounds.center, z.bounds.size, z.vignetteColor, z.vignetteIntensity);
+                RoomTone(z.bounds.center, Mathf.Max(z.bounds.size.x, z.bounds.size.z) * 0.35f);
+            }
+
             FurnishRooms();
+            var fxManager = GetComponent<RecintoSpecialEffects>();
+            if (!fxManager) fxManager = gameObject.AddComponent<RecintoSpecialEffects>();
+            fxManager.Initialize(game);
+
             GuideLamp("taller", new[]
             {
                 Workshop + new Vector3(0f, 2.65f, 4.2f),
@@ -413,10 +497,73 @@ namespace Gamejam2026
             lurkers.Add(new Lurker { Body = body.transform, Rest = body.transform.rotation, Stir = -1f });
         }
 
+        int GetZoneIndex(Vector3 pos)
+        {
+            for (int i = 0; i < zones.Length; i++)
+            {
+                if (zones[i].bounds.Contains(pos)) return i;
+            }
+            return -1;
+        }
+
+        void OnPlayerEnterRoom(DemoPlayer player, RoomZone zone)
+        {
+            if (!player || !game) return;
+            player.Tell("ENTRANDO A: " + zone.title + " — " + zone.subtitle, 4f);
+
+            bool nearCandle = false;
+            foreach (var candle in game.candles)
+            {
+                if (!candle || !candle.candleLight || !candle.candleLight.enabled) continue;
+                if (Vector3.Distance(player.transform.position, candle.transform.position) < 6f)
+                {
+                    nearCandle = true;
+                    break;
+                }
+            }
+
+            if (nearCandle)
+            {
+                candleDraftUntil = Time.time + 1.5f;
+                if (roomAudioSource && windClip)
+                {
+                    roomAudioSource.pitch = Random.Range(0.85f, 1.15f);
+                    roomAudioSource.PlayOneShot(windClip, game.sfxVolume * 0.22f);
+                }
+            }
+
+            if (!visited[zone.id])
+            {
+                visited[zone.id] = true;
+                if (roomAudioSource && game.gearsClip && (zone.id == 3 || zone.id == 4))
+                {
+                    roomAudioSource.pitch = 0.75f;
+                    roomAudioSource.PlayOneShot(game.gearsClip, game.sfxVolume * 0.18f);
+                }
+            }
+        }
+
         void Update()
         {
-            if (lurkers.Count == 0) return;
             if (!game) game = FindAnyObjectByType<DemoGame>();
+            if (game && game.Playing && game.players != null)
+            {
+                for (int i = 0; i < game.players.Length; i++)
+                {
+                    var p = game.players[i];
+                    if (!p) continue;
+                    int zIdx = GetZoneIndex(p.transform.position);
+                    if (zIdx >= 0 && zIdx != playerZone[i])
+                    {
+                        int prev = playerZone[i];
+                        playerZone[i] = zIdx;
+                        if (prev >= 0) OnPlayerEnterRoom(p, zones[zIdx]);
+                        else p.Tell("ZONA: " + zones[zIdx].title + " — " + zones[zIdx].subtitle, 4f);
+                    }
+                }
+            }
+
+            if (lurkers.Count == 0) return;
             if (!game || !game.Playing) return;
             float sway = Mathf.Sin(Time.time * 0.55f);
             for (int i = 0; i < chains.Count; i++)
@@ -482,18 +629,18 @@ namespace Gamejam2026
             WorldMark.PaintFixed(mesh);
         }
 
-        void RoomPressure(Vector3 center, Color tint, float vignetteAmount)
+        void RoomPressure(Vector3 center, Vector3 size, Color tint, float vignetteAmount)
         {
-            var volumeObject = new GameObject("Presión de la sala");
+            var volumeObject = new GameObject("Presión de " + center);
             volumeObject.transform.SetParent(transform, false);
-            volumeObject.transform.position = center + Vector3.up * 1.5f;
+            volumeObject.transform.position = center;
             var box = volumeObject.AddComponent<BoxCollider>();
             box.isTrigger = true;
-            box.size = new Vector3(16f, 5f, 16f);
+            box.size = size;
             var volume = volumeObject.AddComponent<Volume>();
             volume.isGlobal = false;
             volume.priority = 60f;
-            volume.blendDistance = 2.5f;
+            volume.blendDistance = 3.5f;
             var profile = ScriptableObject.CreateInstance<VolumeProfile>();
             roomProfiles.Add(profile);
             volume.sharedProfile = profile;
@@ -523,13 +670,29 @@ namespace Gamejam2026
 
         void LateUpdate()
         {
-            if (Time.time > candleDimUntil || !game) return;
-            float recover = 1f - (candleDimUntil - Time.time) / 0.45f;
-            float dip = Mathf.Lerp(0.38f, 1f, recover);
+            if (!game) return;
+            bool isDraft = Time.time < candleDraftUntil;
+            bool isDim = Time.time < candleDimUntil;
+            if (!isDraft && !isDim) return;
+
+            float flicker = 1f;
+            if (isDraft)
+            {
+                float t = (candleDraftUntil - Time.time) / 1.5f;
+                float flutter = Mathf.Sin(Time.time * 28f) * 0.14f;
+                flicker = Mathf.Lerp(1f, 0.74f + flutter, t);
+            }
+            if (isDim)
+            {
+                float recover = 1f - (candleDimUntil - Time.time) / 0.45f;
+                float dip = Mathf.Lerp(0.38f, 1f, recover);
+                flicker = Mathf.Min(flicker, dip);
+            }
+
             foreach (var candle in game.candles)
             {
                 if (!candle || !candle.candleLight || !candle.candleLight.enabled) continue;
-                candle.candleLight.intensity *= dip;
+                candle.candleLight.intensity *= flicker;
             }
         }
 

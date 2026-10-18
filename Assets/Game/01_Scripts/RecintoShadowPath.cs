@@ -74,6 +74,22 @@ namespace Gamejam2026
                 if (Obstacle(hit.collider)) return false;
             return true;
         }
+
+        public bool ClearSight(Vector3 a, Vector3 b, float radius = 0.26f)
+        {
+            Vector3 from = a + Vector3.up * 0.4f;
+            Vector3 to = b + Vector3.up * 0.4f;
+            Vector3 delta = to - from;
+            float dist = delta.magnitude;
+            if (dist < 0.05f) return true;
+            var hits = Physics.SphereCastAll(from, radius, delta.normalized, dist, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                if (Obstacle(hits[i].collider)) return false;
+            }
+            return true;
+        }
+
         public void Route(Vector3 from, Vector3 to, Queue<Vector3> result)
         {
             result.Clear(); frontier.Clear();
@@ -97,7 +113,33 @@ namespace Gamejam2026
             if (previous[end] < 0) return;
             var reverse = new List<Vector3>();
             for (int at = end; at != start; at = previous[at]) reverse.Add(Point(at));
-            for (int i = reverse.Count - 1; i >= 0; i--) result.Enqueue(reverse[i]);
+
+            if (reverse.Count <= 2)
+            {
+                for (int i = reverse.Count - 1; i >= 0; i--) result.Enqueue(reverse[i]);
+                return;
+            }
+
+            var direct = new List<Vector3>(reverse.Count);
+            for (int i = reverse.Count - 1; i >= 0; i--) direct.Add(reverse[i]);
+
+            int curr = 0;
+            result.Enqueue(direct[0]);
+            while (curr < direct.Count - 1)
+            {
+                int furthest = curr + 1;
+                int maxLookAhead = Mathf.Min(direct.Count - 1, curr + 8);
+                for (int check = maxLookAhead; check > curr + 1; check--)
+                {
+                    if (ClearSight(direct[curr], direct[check]))
+                    {
+                        furthest = check;
+                        break;
+                    }
+                }
+                result.Enqueue(direct[furthest]);
+                curr = furthest;
+            }
         }
     }
 }

@@ -316,6 +316,7 @@ namespace Gamejam2026
             nextAppearance = Mathf.Max(12f, firstAppearanceSeconds);
             shadowShown = false;
             SetShadowVisible(false);
+            RecintoSpecialEffects.AttachShadowMiasma(shadow);
             presencia = GetComponent<RecintoPresencia>();
             if (!presencia) presencia = gameObject.AddComponent<RecintoPresencia>();
             presencia.Bind(this, game, threat);
@@ -428,7 +429,22 @@ namespace Gamejam2026
             if (abandonedTime >= 7 && game.ElapsedSeconds >= nextAbandonedStep)
             { nextAbandonedStep = game.ElapsedSeconds + 9; AdvanceShadow("La luz está lejos de ambos."); }
             bool watched = shadowShown && ShadowWatched();
-            bool traveling = (retreating || travelBudget > 0) && game.ElapsedSeconds >= moveAfter && (!watched || retreating);
+
+            if (watched && !retreating && travelBudget > 0f)
+            {
+                var nearestP = game.players.Where(p => p).OrderBy(p => Vector3.Distance(p.transform.position, shadow.transform.position)).FirstOrDefault();
+                Vector3 away = nearestP ? shadow.transform.position - nearestP.transform.position : -shadow.transform.forward;
+                away.y = 0;
+                if (away.sqrMagnitude < 0.01f) away = Vector3.back;
+                if (path.TryStand(shadow.transform.position + away.normalized * 8f, null, 0f, out Vector3 retreat))
+                {
+                    retreatPoint = retreat;
+                    retreating = true;
+                    route.Clear();
+                }
+            }
+
+            bool traveling = (retreating || travelBudget > 0) && game.ElapsedSeconds >= moveAfter;
             if (!shadowShown && traveling && PlayerCloserThan(3.2f))
             {
                 KeepShadowHidden();
@@ -460,11 +476,28 @@ namespace Gamejam2026
                 if (route.Count > 0)
                 {
                     Vector3 delta = route.Peek() - shadow.transform.position; delta.y = 0;
-                    float step = Mathf.Min(delta.magnitude, Time.deltaTime * 1.1f);
-                    if (delta.sqrMagnitude > .002f) shadow.transform.rotation = Quaternion.Slerp(shadow.transform.rotation, Quaternion.LookRotation(delta), Time.deltaTime * 5);
-                    shadow.transform.position += delta.normalized * step;
-                    if (!retreating) travelBudget = Mathf.Max(0, travelBudget - step);
-                    if (delta.magnitude < .15f) route.Dequeue();
+                    if (delta.sqrMagnitude > .002f)
+                    {
+                        Quaternion targetRot = Quaternion.LookRotation(delta);
+                        shadow.transform.rotation = Quaternion.Slerp(shadow.transform.rotation, targetRot, Time.deltaTime * 7f);
+
+                        float facing = Mathf.Clamp01(Vector3.Dot(shadow.transform.forward, delta.normalized));
+                        float turnFactor = Mathf.Lerp(0.25f, 1f, facing * facing);
+                        float speed = (retreating ? 1.45f : 1.15f) * turnFactor;
+                        float step = Mathf.Min(delta.magnitude, Time.deltaTime * speed);
+
+                        shadow.transform.position += delta.normalized * step;
+                        if (!retreating) travelBudget = Mathf.Max(0, travelBudget - step);
+                    }
+
+                    if (Physics.Raycast(shadow.transform.position + Vector3.up * 0.8f, Vector3.down, out RaycastHit groundHit, 2f, ~0, QueryTriggerInteraction.Ignore))
+                    {
+                        Vector3 gPos = shadow.transform.position;
+                        gPos.y = Mathf.Lerp(gPos.y, groundHit.point.y, Time.deltaTime * 12f);
+                        shadow.transform.position = gPos;
+                    }
+
+                    if (delta.magnitude < .28f) route.Dequeue();
                     if (retreating && route.Count == 0) retreating = false;
                 }
                 else { travelBudget = 0; retreating = false; }
@@ -696,17 +729,14 @@ namespace Gamejam2026
             }
             if (moving)
             {
-                shadowAnimator.speed = 1f;
-                if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl")) shadowAnimator.Play("Crawl", 0, 0f);
+                shadowAnimator.speed = retreating ? 1.3f : 1.05f;
+                if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl"))
+                    shadowAnimator.CrossFade("Crawl", 0.18f);
                 return;
             }
-            if (ShadowWatched())
-            {
-                shadowAnimator.speed = 1f;
-                if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Idle")) shadowAnimator.Play("Idle", 0, 0f);
-                return;
-            }
-            shadowAnimator.speed = 0f;
+            shadowAnimator.speed = 0.85f;
+            if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Idle"))
+                shadowAnimator.CrossFade("Idle", 0.25f);
         }
         public void CopyShadow(out Vector3 position, out float yaw, out bool moving, out bool exists)
         {
@@ -731,7 +761,7 @@ namespace Gamejam2026
             cleaned = true;
             CancelInvoke();
             if (game) game.FirstMechanismCompleted -= PassageChanged;
-            for (int i = spawned.Count - 1; i >= 0; i--) if (spawned[i]) DestroyImmediate(spawned[i]);
+            for (int i = spawned.Count - 1; i >= 0; i--) if (spawned[i]) Destroy(spawned[i]);
             spawned.Clear();
             growths.Clear();
             stations.Clear();
@@ -739,8 +769,8 @@ namespace Gamejam2026
                 if (signs[i] && i < signLabels.Count) signs[i].text = signLabels[i];
             signs.Clear();
             signLabels.Clear();
-            if (candleLoop) DestroyImmediate(candleLoop);
-            if (fright) DestroyImmediate(fright);
+            if (candleLoop) Destroy(candleLoop);
+            if (fright) Destroy(fright);
             foreach (var m in new[] { metal, darkLamp, activeLamp, insects, larva, bodyMaterial }) if (m) Destroy(m);
             if (ownsStain && stain) Destroy(stain);
             foreach (var m in eldritchMaterials) if (m) Destroy(m);

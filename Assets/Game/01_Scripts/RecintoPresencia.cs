@@ -202,12 +202,22 @@ namespace Gamejam2026
             {
                 Vector3 delta = route.Peek() - body.transform.position;
                 delta.y = 0f;
-                float speed = startled ? 2.05f : 1.5f;
-                float step = Mathf.Min(delta.magnitude, Time.deltaTime * speed);
                 if (delta.sqrMagnitude > 0.002f)
-                    body.transform.rotation = Quaternion.Slerp(body.transform.rotation, Quaternion.LookRotation(delta), Time.deltaTime * 6f);
-                if (delta.sqrMagnitude > 0.0001f) body.transform.position += delta.normalized * step;
-                if (delta.magnitude < 0.16f) route.Dequeue();
+                {
+                    body.transform.rotation = Quaternion.Slerp(body.transform.rotation, Quaternion.LookRotation(delta), Time.deltaTime * 7f);
+                    float facing = Mathf.Clamp01(Vector3.Dot(body.transform.forward, delta.normalized));
+                    float turnFactor = Mathf.Lerp(0.35f, 1f, facing * facing);
+                    float speed = (startled ? 2.1f : 1.5f) * turnFactor;
+                    float step = Mathf.Min(delta.magnitude, Time.deltaTime * speed);
+                    body.transform.position += delta.normalized * step;
+                }
+                if (Physics.Raycast(body.transform.position + Vector3.up * 0.8f, Vector3.down, out RaycastHit hit, 2f, ~0, QueryTriggerInteraction.Ignore))
+                {
+                    Vector3 pos = body.transform.position;
+                    pos.y = Mathf.Lerp(pos.y, hit.point.y, Time.deltaTime * 12f);
+                    body.transform.position = pos;
+                }
+                if (delta.magnitude < 0.22f) route.Dequeue();
                 finished = route.Count == 0;
             }
             if (!LanAuthority.Simulates) return;
@@ -229,7 +239,8 @@ namespace Gamejam2026
         {
             if (!animator) return;
             animator.speed = 1f;
-            if (!animator.GetCurrentAnimatorStateInfo(0).IsName(state)) animator.Play(state, 0, 0f);
+            if (!animator.GetCurrentAnimatorStateInfo(0).IsName(state))
+                animator.CrossFade(state, 0.16f);
         }
 
         void Show(bool value)
