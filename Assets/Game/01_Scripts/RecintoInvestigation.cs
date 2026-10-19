@@ -490,7 +490,7 @@ namespace Gamejam2026
                         if (!retreating) travelBudget = Mathf.Max(0, travelBudget - step);
                     }
 
-                    if (Physics.Raycast(shadow.transform.position + Vector3.up * 0.8f, Vector3.down, out RaycastHit groundHit, 2f, ~0, QueryTriggerInteraction.Ignore))
+                    if (Physics.Raycast(shadow.transform.position + Vector3.up * 0.8f, Vector3.down, out RaycastHit groundHit, 2.5f, ~0, QueryTriggerInteraction.Ignore) && groundHit.normal.y > 0.55f)
                     {
                         Vector3 gPos = shadow.transform.position;
                         gPos.y = Mathf.Lerp(gPos.y, groundHit.point.y, Time.deltaTime * 12f);
@@ -500,11 +500,29 @@ namespace Gamejam2026
                     if (delta.magnitude < .28f) route.Dequeue();
                     if (retreating && route.Count == 0) retreating = false;
                 }
-                else { travelBudget = 0; retreating = false; }
+                else if (path.TryStand(shadow.transform.position, null, 0f, out Vector3 stand) && (stand - shadow.transform.position).sqrMagnitude > 0.2f)
+                    route.Enqueue(stand);
+                else
+                {
+                    travelBudget = Mathf.Max(0f, travelBudget - Time.deltaTime * 0.35f);
+                    if (travelBudget <= 0f) retreating = false;
+                }
                 if (shadowTarget && !retreating && !shadowTarget.Contaminated && Vector3.Distance(shadow.transform.position, shadowTarget.transform.position) < 2)
                 {
                     shadowTarget.Corrupt(); game.Notify("Metal y roce húmedo: la sombra ha corrompido " + shadowTarget.name + ". Quemen el brote.", 7);
-                    Sound(game.gearsClip, shadow.transform.position, .14f); shadowTarget = null; travelBudget = 0; route.Clear();
+                    Sound(game.gearsClip, shadow.transform.position, .14f);
+                    Vector3 away = shadow.transform.position - shadowTarget.transform.position;
+                    away.y = 0f;
+                    if (away.sqrMagnitude < 0.01f) away = Vector3.back;
+                    route.Clear();
+                    shadowTarget = null;
+                    if (path.TryStand(shadow.transform.position + away.normalized * 6f, null, 0f, out Vector3 leave))
+                    {
+                        retreatPoint = leave;
+                        retreating = true;
+                        travelBudget = Mathf.Max(travelBudget, 4f);
+                    }
+                    else travelBudget = 0f;
                 }
             }
             bool canTouch = shadowShown && !retreating && game.ElapsedSeconds >= contactAfter && game.ElapsedSeconds >= moveAfter && travelBudget > 0f;
@@ -727,16 +745,9 @@ namespace Gamejam2026
                 shadowAnimator.speed = 0f;
                 return;
             }
-            if (moving)
-            {
-                shadowAnimator.speed = retreating ? 1.3f : 1.05f;
-                if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl"))
-                    shadowAnimator.CrossFade("Crawl", 0.18f);
-                return;
-            }
-            shadowAnimator.speed = 0.85f;
-            if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Idle"))
-                shadowAnimator.CrossFade("Idle", 0.25f);
+            shadowAnimator.speed = moving ? (retreating ? 1.3f : 1.05f) : 0.55f;
+            if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl"))
+                shadowAnimator.CrossFade("Crawl", 0.12f);
         }
         public void CopyShadow(out Vector3 position, out float yaw, out bool moving, out bool exists)
         {

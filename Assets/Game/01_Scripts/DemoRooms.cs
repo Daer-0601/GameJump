@@ -98,7 +98,11 @@ namespace Gamejam2026
         struct Lurker
         {
             public Transform Body;
-            public Quaternion Rest;
+            public Quaternion Model;
+            public float Yaw;
+            public float Foot;
+            public Vector3 Goal;
+            public float NextMove;
             public float Stir;
         }
 
@@ -487,14 +491,25 @@ namespace Gamejam2026
                 renderer.sharedMaterial = skin;
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             }
-            body.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+            Quaternion model = source.transform.rotation;
+            body.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f) * model);
             Bounds bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
-            if (bounds.size.y > 0.05f) body.transform.localScale *= 1.15f / bounds.size.y;
+            if (bounds.size.y > 0.05f) body.transform.localScale *= 1.45f / bounds.size.y;
             bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
             body.transform.position += Vector3.up * (0.02f - bounds.min.y);
-            lurkers.Add(new Lurker { Body = body.transform, Rest = body.transform.rotation, Stir = -1f });
+            float foot = body.transform.position.y - position.y;
+            lurkers.Add(new Lurker
+            {
+                Body = body.transform,
+                Model = model,
+                Yaw = yaw,
+                Foot = foot,
+                Goal = body.transform.position,
+                NextMove = 4f,
+                Stir = -1f
+            });
         }
 
         int GetZoneIndex(Vector3 pos)
@@ -582,29 +597,62 @@ namespace Gamejam2026
             {
                 var lurker = lurkers[i];
                 if (!lurker.Body) continue;
-                if (lurker.Stir < 0f)
+                Vector3 pos = lurker.Body.position;
+                bool crawling = (lurker.Goal - pos).sqrMagnitude > 0.06f;
+                if (!crawling && game.players != null && Time.time >= lurker.NextMove)
                 {
+                    DemoPlayer nearest = null;
+                    float best = 7f;
                     foreach (var player in game.players)
                     {
-                        if (!player || !player.Held || !player.Held.isCandle) continue;
-                        if (Vector3.Distance(player.transform.position, lurker.Body.position) > 5.5f) continue;
+                        if (!player) continue;
+                        float distance = Vector3.Distance(player.transform.position, pos);
+                        if (distance >= best) continue;
+                        best = distance;
+                        nearest = player;
+                    }
+                    if (nearest)
+                    {
+                        Vector3 away = pos - nearest.transform.position;
+                        away.y = 0f;
+                        if (away.sqrMagnitude < 0.04f) away = Quaternion.Euler(0f, lurker.Yaw, 0f) * Vector3.forward;
+                        away.Normalize();
+                        float reach = 3.4f;
+                        if (Physics.Raycast(pos + Vector3.up * 0.7f, away, out RaycastHit block, reach, ~0, QueryTriggerInteraction.Ignore))
+                            reach = Mathf.Max(0.9f, block.distance - 0.4f);
+                        lurker.Goal = pos + away * reach;
+                        lurker.Yaw = Quaternion.LookRotation(away, Vector3.up).eulerAngles.y;
+                        lurker.NextMove = Time.time + 18f;
                         lurker.Stir = 0f;
                         candleDimUntil = Time.time + 0.45f;
                         if (game.gearsClip)
                         {
-                            var tick = lurker.Body.gameObject.AddComponent<AudioSource>();
+                            var tick = lurker.Body.GetComponent<AudioSource>();
+                            if (!tick) tick = lurker.Body.gameObject.AddComponent<AudioSource>();
                             tick.spatialBlend = 0f;
                             tick.volume = game.sfxVolume * 0.12f;
                             tick.PlayOneShot(game.gearsClip);
                         }
-                        break;
+                        crawling = reach > 0.2f;
                     }
                 }
-                else if (lurker.Stir < 1f)
+                if (crawling)
                 {
-                    lurker.Stir = Mathf.MoveTowards(lurker.Stir, 1f, Time.deltaTime * 0.35f);
-                    float yaw = Mathf.Sin(lurker.Stir * Mathf.PI) * 28f;
-                    lurker.Body.rotation = lurker.Rest * Quaternion.Euler(0f, yaw, Mathf.Sin(lurker.Stir * Mathf.PI) * 4f);
+                    Vector3 next = Vector3.MoveTowards(pos, lurker.Goal, Time.deltaTime * 1.55f);
+                    Vector3 flat = lurker.Goal - pos;
+                    flat.y = 0f;
+                    if (flat.sqrMagnitude > 0.0004f)
+                        lurker.Yaw = Quaternion.LookRotation(flat, Vector3.up).eulerAngles.y;
+                    float floor = pos.y - lurker.Foot;
+                    if (Physics.Raycast(next + Vector3.up * 1.6f, Vector3.down, out RaycastHit ground, 4f, ~0, QueryTriggerInteraction.Ignore) && ground.normal.y > 0.55f)
+                        floor = ground.point.y;
+                    next.y = floor + lurker.Foot + Mathf.Sin(Time.time * 9f) * 0.025f;
+                    lurker.Body.SetPositionAndRotation(next, Quaternion.Euler(0f, lurker.Yaw, 0f) * lurker.Model);
+                }
+                else
+                {
+                    float lean = Mathf.Sin(Time.time * 0.65f + i * 1.7f) * 3f;
+                    lurker.Body.rotation = Quaternion.Euler(0f, lurker.Yaw + lean, 0f) * lurker.Model;
                 }
                 lurkers[i] = lurker;
             }
