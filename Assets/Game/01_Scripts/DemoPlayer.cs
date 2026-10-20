@@ -39,7 +39,8 @@ namespace Gamejam2026
         public bool HasFocus { get; private set; }
         public float FocusProgress { get; private set; } = -1f;
         public CuadernoVista Notebook { get; set; }
-        public bool Reading => Notebook && Notebook.Blocking;
+        public bool Reading => (Notebook && Notebook.Blocking)
+            || (LanAuthority.LanMatch && LanAuthority.IsHost && playerIndex == 1 && LanFlow.RemoteReading);
         public float PresentedSpeed { get; private set; }
         public float Pitch => pitch;
         public float ActualSpeed => LanAuthority.IsClientView ? PresentedSpeed

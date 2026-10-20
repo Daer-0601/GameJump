@@ -12,7 +12,7 @@ La experiencia busca terror y tensión cooperativa, en tercera persona según el
 
 El prototipo se juega en una sola escena, `Demo.unity`, que también es la única entrada de Build Settings. El menú no tiene escena propia: `DemoGame` lo dibuja sobre la partida antes de empezar, con el fondo `Assets/Game/02_Materials/UI_menu/Menu.jpg`. Incluye el título **A Oscuras**, el nombre de cada jugador, **INICIAR EXPEDICIÓN**, **CREAR PARTIDA LAN**, **UNIRSE A PARTIDA**, **OPCIONES** y **SALIR**. Los nombres y el volumen quedan en `PlayerPrefs`. Iniciar muestra una introducción de 5,4 s que se puede saltar con Espacio, Enter o A; el control y el peligro empiezan después. La expedición local se juega con un teclado compartido y no exige mando.
 
-La partida LAN usa Netcode for GameObjects 2.13.2 sobre Unity Transport, puerto UDP 7777, solo en la misma red. El anfitrión simula las reglas y genera una sola semilla; el cliente envía su entrada y aplica el estado. Cada PC controla un operario a pantalla completa: el anfitrión empieza con la vela y el cliente con la manivela. El modo local no abre sockets.
+La partida LAN usa Netcode for GameObjects 2.13.2 sobre Unity Transport, puerto UDP 7777, solo en la misma red. El anfitrión simula las reglas y genera una sola semilla; el cliente envía su entrada y aplica el estado. La entrada incluye si está leyendo el cuaderno: al abrirlo se envía inmediatamente el bloqueo, se limpian movimiento, mirada y acciones pendientes, y el anfitrión también detiene a ese operario. Al cerrarlo se aceptan acciones nuevas sin reproducir las anteriores. Cada PC controla un operario a pantalla completa: el anfitrión empieza con la vela y el cliente con la manivela. El modo local no abre sockets.
 
 Pausa, victoria y derrota usan esa misma interfaz. Desde la pausa también se abre **OPCIONES**. **Volver a intentar** recarga Demo y continúa con los nombres guardados. **Volver al menú** recarga Demo y se detiene en el menú. El volumen se conserva entre sesiones.
 
@@ -35,7 +35,7 @@ Objetivo de duración: 12–18 minutos con exploración, comunicación y recuper
 - `Assets/Game/00_Scenes/Demo.unity`: escena principal del prototipo.
 - `Assets/Game/01_Scripts/`: scripts de partida, jugador, objetos, mecanismos, inscripción e investigación. `RecintoInvestigation` distribuye los puestos al iniciar, `RecintoStation` resuelve sus interacciones y `RecintoWorm` anima decoración pequeña. Menú, pausa, finales y HUD viven en `DemoGame` con IMGUI; no hay otra escena de interfaz.
 - `Assets/Game/02_Materials/`: materiales del escenario.
-- `Assets/Game/03_Editor/`: herramientas existentes y `DemoProduction`, que aplica arte de forma incremental sin reconstruir el recinto. `DemoProductionCheck` verifica estados en Play. Los builders antiguos no se ejecutan para este trabajo.
+- `Assets/Game/03_Editor/`: herramientas existentes y `DemoProduction`, que aplica arte de forma incremental sin reconstruir el recinto. `DemoProductionCheck` verifica estados en Play; `DemoFeedbackCheck` cubre avisos, bloqueo del cuaderno y detención de la sombra por mirada. Las herramientas se protegen con `UNITY_EDITOR` para que sus referencias a UnityEditor no entren al ejecutable. Los builders antiguos no se ejecutan para este trabajo.
 - `Assets/Game/04_Audio/`: ambiente y efectos de sonido.
 - `Packages/manifest.json`: dependencias de Unity.
 - `ProjectSettings/ProjectVersion.txt`: versión del editor fijada por el proyecto.
@@ -47,7 +47,7 @@ El flujo principal vive hoy en una escena. Inspecciona `DemoGame`, `DemoPlayer`,
 - Menú y opciones: flechas, stick, cruceta o ratón para elegir; Enter o A confirman. En un nombre, el teclado escribe. OPCIONES guarda volumen general, ambiente, efectos, pantalla completa y resolución. Esc o B regresan.
 - Partida, teclado compartido: jugador 1 usa WASD, mouse o F/H y T/G para mirar, E para usar, Q para soltar, Tab para el cuaderno, A/D para pasar página y Shift izquierdo para correr. Jugador 2 usa las flechas, J/L e I/K para mirar, U para usar, O para soltar, P para el cuaderno, flechas izq./der. para pasar página y Shift derecho para correr. Escape pausa. El cuaderno es compartido; abrirlo solo detiene a ese jugador.
 - El mando navega el menú. La partida actual no lo usa para moverse ni interactuar.
-- LAN: cada PC usa WASD, ratón, E, Q y Shift. Crear partida muestra la IPv4 y el puerto 7777. Unirse pide esa IP. La expedición empieza cuando los dos marcan listo. Si alguien se desconecta, la sala queda en pausa y se vuelve al menú; no hay reconexión.
+- LAN: cada PC usa WASD, ratón, E, Q y Shift. Crear partida muestra la IPv4 y el puerto 7777. Unirse pide esa IP. La expedición empieza cuando los dos marcan listo. Si alguien se desconecta, la sala queda en pausa y se vuelve al menú; no hay reconexión. El protocolo LAN es 1 para incluir el bloqueo del cuaderno; ambos PCs deben usar esta versión.
 
 Comprueba los controles en código antes de cambiarlos y mantén señales claras de qué jugador puede realizar cada acción.
 

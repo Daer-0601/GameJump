@@ -29,13 +29,13 @@ Las ejecuciones anteriores de regresión terminaron con `ALL_PASSED`: dos rigs, 
 
 Al corte del 17/10/2026, el último `ALL_PASSED` registrado es anterior a los ajustes finales. Falta repetir Play para verificar específicamente que la sombra elija la vela aunque otro jugador esté más cerca, que la contención cuente toda la sala y que la pose de interacción agachada conserve posiciones y escalas. También deben revisarse el dato aleatorio del primer cuerpo, el aviso de poca luz y la conservación de `runInBackground` al salir de la prueba. El archivo de ajustes actualmente conserva `runInBackground: 0`.
 
-Existe un build Windows en `Build/AOscuras/AOscuras.exe`; `Temp/Production.build` registra `Succeeded bytes=146998685 errors=0`. Ese build precede a los últimos ajustes: falta recompilar después de las pruebas, abrir el ejecutable y preparar controles, créditos y licencias para distribuirlo. El reparto y los criterios de entrega están en `TAREAS_EQUIPO.md`.
+El 17/10 se había generado un build Windows de 146.998.685 bytes, anterior al mapa nuevo y a los ajustes finales. El cierre del 18/10 se documenta en la sección de exportación de este archivo. El reparto de mejoras está en `TAREAS_EQUIPO.md`.
 
 Falta una partida humana completa de 12–18 minutos para medir orientación, mezcla de audio, frecuencia de errores, tensión y duración. Ese intervalo es objetivo de diseño, no una duración acreditada por la prueba automática.
 
 ## Presentación de la amenaza
 
-No se ejecutó Play Mode para esta capa. Para reproducirla en una expedición nueva:
+Queda pendiente una evaluación manual completa del audio y de los eventos ambientales de esta capa. Para reproducirla en una expedición nueva:
 
 1. El crescendo sigue en el loop `Ambiente - audio original CC0`: volumen de 0.16 a 0.42 según el peligro, más `AmbientBackground` a volumen fijo. El control de ambiente escala las dos. No es el aviso de la sombra.
 2. Provocar un avance de sombra (vela lejos 7 s, error o luz que delata). Debe sonar `ShadowWarning` una vez y mantenerse el texto «Algo cruza fuera de la vela» durante los 3 s ya definidos.
@@ -44,6 +44,26 @@ No se ejecutó Play Mode para esta capa. Para reproducirla en una expedición nu
 5. Acercarse una vez al Portón cerrado (hijo del recinto, posición local 0, 2.5, -11): `TocToc` detrás de la puerta, una vez. No abre el portón.
 6. Acercarse una vez a la luz de escena «Luz Patio interior»: parpadeo breve de esa luz y `LightFlicker`, luego vuelve su intensidad. No usa las luces X/Y.
 7. Pausa, reanudar, ganar o perder deben dejar esa luz en su intensidad original. Reintentar o volver al menú recarga la escena y permite oír los dos eventos otra vez.
+
+## Regresión de avisos, lectura y mirada — 18/10/2026
+
+`Gamejam > Producción > Comprobar cuaderno avisos y sombra` ejecuta una prueba enfocada sobre la escena guardada y termina fuera de Play, sin guardar cambios de escena. Es independiente del recorrido antiguo de producción. Deja el resultado en `Temp/Feedback.check` y capturas en `Temp/FeedbackBook.png` y `Temp/FeedbackWorld.png`.
+
+Ejecutada en Unity 6000.5.6f1 con base `2d33004` y las correcciones locales: `ALL_PASSED` (16 comprobaciones). Se revisaron las dos capturas de 2560×1440: el aviso de amenaza y el mensaje de peligro son legibles en ambas mitades, con el cuaderno abierto y cerrado, sin tapar el procedimiento. Se conservan la recuperación de rutas y las presencias de Taller/Bombas del commit nuevo.
+
+- El estado de lectura debe sobrevivir a la serialización LAN, cancelar entradas pendientes y rechazar uso/soltar mientras está abierto. Cerrarlo debe permitir entradas nuevas, sin recuperar las anteriores; los paquetes antiguos no deben cambiar el bloqueo.
+- Cada cámara, por separado, debe detener la sombra sin consumir el tramo ni iniciar una retirada. Una pared impide detenerla y apartar ambas miradas permite continuar. La retirada tras contacto también se detiene al mirarla. La réplica debe mostrarla aunque aparezca ya detenida.
+- El cuaderno local sigue bloqueando movimiento, mirada e interacción. Los avisos de amenaza y peligro se muestran en cada mitad con el cuaderno abierto y cerrado; se conservan las notas y el procedimiento dentro del cuaderno.
+
+La prueba programática de entradas y serialización no sustituye una expedición LAN entre dos PCs. Comprobar allí que abrir/cerrar durante el giro o la reparación los interrumpe y permite retomarlos, sin mover al cliente ni soltar su objeto mientras lee.
+
+Archivos de estas correcciones: `DemoGame.cs` (avisos), `CuadernoVista.cs` (orden de actualización), `DemoPlayer.cs`, `LanFlow.cs`, `LanSession.cs` y `LanSnapshot.cs` (bloqueo de lectura), `RecintoInvestigation.cs` (mirada y réplica visible) y `DemoFeedbackCheck.cs` con su `.meta` (regresión). Para exportar Windows se añadieron guardas `UNITY_EDITOR` a `CuadernoSetup.cs`, `FinalCharacterIntegration.cs`, `LanPrefabBuilder.cs`, `PlayProbe.cs` y `WorkerAnimationIntegration.cs`; su código y sus GUID se conservan.
+
+## Exportación Windows — 18/10/2026
+
+Base `2d33004` más las correcciones locales. El build final terminó con `Succeeded bytes=418026828 errors=0`; ejecutable en `Build/AOscuras/AOscuras.exe`. El primer intento encontró referencias a UnityEditor en cinco herramientas; las guardas descritas arriba corrigieron ese bloqueo. Se conservan los recursos, las escenas y los GUID del equipo.
+
+La evidencia de la regresión y sus dos capturas está en `Build/Verificacion-2026-10-18/`. La distribución incluye controles, créditos y licencias; el ZIP excluye las carpetas `DoNotShip`. La partida LAN completa entre dos PCs sigue pendiente de validación humana.
 
 ## Archivos y packs
 

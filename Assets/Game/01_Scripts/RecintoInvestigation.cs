@@ -428,35 +428,21 @@ namespace Gamejam2026
             abandonedTime = candleClose ? 0 : abandonedTime + Time.deltaTime;
             if (abandonedTime >= 7 && game.ElapsedSeconds >= nextAbandonedStep)
             { nextAbandonedStep = game.ElapsedSeconds + 9; AdvanceShadow("La luz está lejos de ambos."); }
-            bool watched = shadowShown && ShadowWatched();
-
-            if (watched && !retreating && travelBudget > 0f)
-            {
-                var nearestP = game.players.Where(p => p).OrderBy(p => Vector3.Distance(p.transform.position, shadow.transform.position)).FirstOrDefault();
-                Vector3 away = nearestP ? shadow.transform.position - nearestP.transform.position : -shadow.transform.forward;
-                away.y = 0;
-                if (away.sqrMagnitude < 0.01f) away = Vector3.back;
-                if (path.TryStand(shadow.transform.position + away.normalized * 8f, null, 0f, out Vector3 retreat))
-                {
-                    retreatPoint = retreat;
-                    retreating = true;
-                    route.Clear();
-                }
-            }
-
             bool traveling = (retreating || travelBudget > 0) && game.ElapsedSeconds >= moveAfter;
             if (!shadowShown && traveling && PlayerCloserThan(3.2f))
             {
                 KeepShadowHidden();
                 if (PlayerCloserThan(3.2f)) traveling = false;
             }
-            navigating = traveling;
-            if (navigating) RevealShadow();
+            if (traveling) RevealShadow();
+            bool watched = shadowShown && ShadowWatched();
+            // Mirarla pausa la ruta, también durante la retirada tras un contacto.
+            // No gasta el tramo ni gira, contamina o se desplaza mientras esté a la vista.
+            navigating = traveling && !watched;
             PoseShadow(navigating);
-            if (navigating) watched = ShadowWatched();
-            if (wasTraveling && !traveling && shadowShown) HoldQuiet(10f);
-            wasTraveling = traveling;
-            if (threat) threat.NoteMotion(traveling && shadowShown, shadow.transform.position);
+            if (wasTraveling && !navigating && shadowShown) HoldQuiet(10f);
+            wasTraveling = navigating;
+            if (threat) threat.NoteMotion(navigating && shadowShown, shadow.transform.position);
             if (navigating)
             {
                 if (route.Count == 0)
@@ -745,24 +731,38 @@ namespace Gamejam2026
                 shadowAnimator.speed = 0f;
                 return;
             }
-            shadowAnimator.speed = moving ? (retreating ? 1.3f : 1.05f) : 0.55f;
-            if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl"))
-                shadowAnimator.CrossFade("Crawl", 0.12f);
+            if (moving)
+            {
+                shadowAnimator.speed = retreating ? 1.3f : 1.05f;
+                if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Crawl"))
+                    shadowAnimator.CrossFade("Crawl", 0.12f);
+                return;
+            }
+            shadowAnimator.speed = 0.85f;
+            if (!shadowAnimator.GetCurrentAnimatorStateInfo(0).IsName("Idle"))
+                shadowAnimator.CrossFade("Idle", 0.25f);
         }
         public void CopyShadow(out Vector3 position, out float yaw, out bool moving, out bool exists)
         {
-            exists = shadow;
+            exists = shadow && shadowShown;
             moving = navigating;
             position = shadow ? shadow.transform.position : Vector3.zero;
             yaw = shadow ? shadow.transform.eulerAngles.y : 0f;
         }
         public void ApplyShadow(Vector3 position, float yaw, bool moving, bool exists)
         {
-            if (!exists || !shadow) return;
+            if (!shadow) return;
+            if (!exists)
+            {
+                shadowShown = false;
+                navigating = false;
+                SetShadowVisible(false);
+                PoseShadow(false);
+                return;
+            }
             shadow.transform.SetPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
             navigating = moving;
-            if (moving) RevealShadow();
-            else if (!shadowShown) SetShadowVisible(false);
+            RevealShadow();
             PoseShadow(moving);
         }
         void OnDestroy() { Cleanup(); }

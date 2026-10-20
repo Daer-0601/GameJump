@@ -52,6 +52,7 @@ namespace Gamejam2026
         public static Vector2 RemoteLook { get; private set; }
         public static bool RemoteRun { get; private set; }
         public static bool RemoteUseHeld { get; private set; }
+        public static bool RemoteReading { get; private set; }
         static bool remoteUse;
         static bool remoteDrop;
         static float remoteAt = -100f;
@@ -258,6 +259,18 @@ namespace Gamejam2026
             if (hasSequence && (ushort)(input.sequence - lastSequence) >= 32768) return;
             hasSequence = true;
             lastSequence = input.sequence;
+            remoteAt = Time.unscaledTime;
+            RemoteReading = input.reading;
+            if (RemoteReading)
+            {
+                RemoteMove = Vector2.zero;
+                RemoteLook = Vector2.zero;
+                RemoteRun = false;
+                RemoteUseHeld = false;
+                remoteUse = false;
+                remoteDrop = false;
+                return;
+            }
             RemoteMove = new Vector2(input.moveX, input.moveY);
             RemoteLook += new Vector2(input.lookX, input.lookY);
             RemoteRun = input.run;
@@ -267,6 +280,7 @@ namespace Gamejam2026
 
         public static void StoreEdge(bool use, bool drop)
         {
+            if (RemoteReading) return;
             if (use) remoteUse = true;
             if (drop) remoteDrop = true;
             remoteAt = Time.unscaledTime;
@@ -274,6 +288,7 @@ namespace Gamejam2026
 
         public static DemoPlayerInput.State ConsumeRemote()
         {
+            if (RemoteReading) return default;
             if (Time.unscaledTime - remoteAt > 0.45f)
             {
                 RemoteMove = Vector2.zero;
@@ -293,6 +308,7 @@ namespace Gamejam2026
 
         public static void ClearRemote()
         {
+            RemoteReading = false;
             RemoteMove = Vector2.zero;
             RemoteLook = Vector2.zero;
             RemoteRun = false;
@@ -454,6 +470,7 @@ namespace Gamejam2026
             manager = host.AddComponent<NetworkManager>();
             manager.NetworkConfig = new NetworkConfig
             {
+                ProtocolVersion = 1, // LanInput incluye el estado de lectura del cuaderno.
                 NetworkTransport = transport,
                 ConnectionApproval = true,
                 EnableSceneManagement = false,

@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System;
 using System.Linq;
 using UnityEditor;
@@ -188,3 +189,4 @@ namespace Gamejam2026.Editor
         }
     }
 }
+#endif

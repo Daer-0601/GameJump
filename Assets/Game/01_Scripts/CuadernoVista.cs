@@ -5,6 +5,7 @@ using UnityEngine.Rendering.Universal;
 namespace Gamejam2026
 {
     // El cuaderno en manos de un jugador: solo su cámara lo dibuja y solo él queda quieto leyendo.
+    [DefaultExecutionOrder(-10)]
     public class CuadernoVista : MonoBehaviour
     {
         enum State { Hidden, Opening, Open, Closing }

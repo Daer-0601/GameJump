@@ -22,6 +22,7 @@ namespace Gamejam2026
         int pendingSeed;
         float inputInterval = 1f / 30f;
         float snapshotInterval = 1f / 30f;
+        bool sentReading;
 
         void Awake()
         {
@@ -85,24 +86,32 @@ namespace Gamejam2026
             int slot = LanAuthority.LocalSlot;
             if (game.players == null || slot < 0 || slot >= game.players.Length || !game.players[slot]) return;
             var avatar = game.players[slot];
-            var sample = DemoPlayerInput.Read(0, avatar.keyboardLookSpeed, avatar.mouseSensitivity, Time.deltaTime, avatar.preciseLookMultiplier);
+            bool reading = avatar.Reading;
+            var sample = reading ? default : DemoPlayerInput.Read(0, avatar.keyboardLookSpeed, avatar.mouseSensitivity, Time.deltaTime, avatar.preciseLookMultiplier);
+            if (reading) pendingLook = Vector2.zero;
+            pendingLook += sample.Look;
+            // Abrir/cerrar manda un paquete inmediato; no arrastra una mirada o un uso anterior.
+            if (reading != sentReading || Time.unscaledTime >= nextInput)
+            {
+                sentReading = reading;
+                nextInput = Time.unscaledTime + inputInterval;
+                inputSequence++;
+                InputRpc(new LanInput
+                {
+                    moveX = sample.Move.x,
+                    moveY = sample.Move.y,
+                    lookX = pendingLook.x,
+                    lookY = pendingLook.y,
+                    run = sample.Run,
+                    useHeld = sample.UseHeld,
+                    reading = reading,
+                    sequence = inputSequence
+                });
+                pendingLook = Vector2.zero;
+            }
+            // El servidor recibe el cierre antes de la primera acción nueva.
             if (sample.Use) EdgeRpc(1);
             if (sample.Drop) EdgeRpc(2);
-            pendingLook += sample.Look;
-            if (Time.unscaledTime < nextInput) return;
-            nextInput = Time.unscaledTime + inputInterval;
-            inputSequence++;
-            InputRpc(new LanInput
-            {
-                moveX = sample.Move.x,
-                moveY = sample.Move.y,
-                lookX = pendingLook.x,
-                lookY = pendingLook.y,
-                run = sample.Run,
-                useHeld = sample.UseHeld,
-                sequence = inputSequence
-            });
-            pendingLook = Vector2.zero;
         }
 
         public void PushReady(bool ready)

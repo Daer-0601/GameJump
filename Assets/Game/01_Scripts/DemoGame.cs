@@ -964,7 +964,7 @@ namespace Gamejam2026
             if (Time.time < pulseUntil && priority < pulsePriority) return;
             pulseText = text;
             pulsePriority = priority;
-            pulseUntil = Time.time + 1.6f;
+            pulseUntil = Time.time + (priority >= 2 ? 4f : 1.6f);
             if (!LanEcho.Applying && LanAuthority.IsHost) LanSession.BroadcastPulse(text, priority);
         }
 
@@ -1997,7 +1997,19 @@ namespace Gamejam2026
                 if (!reading) DrawReticle(player, left + half * 0.5f, height * 0.5f);
                 DrawWhisper(player, left, half, height);
                 DrawNotebookCue(player, left, half, height, reading);
+                DrawUrgentNotices(left, half);
             }
+        }
+
+        // El cuaderno conserva el procedimiento; lo urgente se puede leer sin abrirlo ni cerrarlo.
+        void DrawUrgentNotices(float left, float width)
+        {
+            float y = Containing ? 40f : 22f;
+            float panelWidth = width - 44f;
+            if (elapsed < threatUntil && !string.IsNullOrEmpty(threatText))
+                y += DrawHudPanel(left + 22f, y, panelWidth, "AVISO: " + threatText, hudSmallStyle, Accent);
+            if (Time.time < pulseUntil && !string.IsNullOrEmpty(pulseText))
+                DrawHudPanel(left + 22f, y, panelWidth, pulseText, hudSmallStyle, pulsePriority >= 2 ? Accent : Paper);
         }
 
         void DrawReticle(DemoPlayer player, float x, float y)

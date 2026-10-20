@@ -61,7 +61,7 @@ namespace Gamejam2026
     public struct LanInput : INetworkSerializable
     {
         public float moveX, moveY, lookX, lookY;
-        public bool run, useHeld;
+        public bool run, useHeld, reading;
         public ushort sequence;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -72,6 +72,7 @@ namespace Gamejam2026
             serializer.SerializeValue(ref lookY);
             serializer.SerializeValue(ref run);
             serializer.SerializeValue(ref useHeld);
+            serializer.SerializeValue(ref reading);
             serializer.SerializeValue(ref sequence);
         }
     }

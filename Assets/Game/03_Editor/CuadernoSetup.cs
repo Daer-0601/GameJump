@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEngine;
 
@@ -40,3 +41,4 @@ namespace Gamejam2026.EditorTools
         }
     }
 }
+#endif
